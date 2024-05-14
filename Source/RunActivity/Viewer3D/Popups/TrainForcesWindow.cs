@@ -76,12 +76,9 @@ namespace Orts.Viewer3D.Popups
                 int carPosition = 0;
                 foreach (var car in PlayerTrain.Cars)
                 {
-                    scrollbox.Add(RearCouplerBar[carPosition] = new Image(6, 38));
+                    scrollbox.Add(RearCouplerBar[carPosition] = new Image(6, 40));
                     RearCouplerBar[carPosition].Texture = BarTextures;
-                    var idx = CalcBarIndex(car.SmoothedCouplerForceUN, car.Flipped);
-                    if (car.WagonType == TrainCar.WagonTypes.Engine) { RearCouplerBar[carPosition].Source = new Rectangle(1 + idx * 6, 0, 6, 40); }
-                    else { RearCouplerBar[carPosition].Source = new Rectangle(1 + idx * 6, 40, 6, 40); }
-
+                    UpdateCouplerImage(car, carPosition);
                     carPosition++;
                 }
                 var textbox = vbox.AddLayoutHorizontalLineOfText();
@@ -114,14 +111,12 @@ namespace Orts.Viewer3D.Popups
                     Layout();
                 }
             }
-            if (PlayerTrain != null)
+            else if (PlayerTrain != null)
             {
                 int carPosition = 0;
                 foreach (var car in PlayerTrain.Cars)
                 {
-                    var idx = CalcBarIndex(car.SmoothedCouplerForceUN, car.Flipped);
-                    if (car.WagonType == TrainCar.WagonTypes.Engine) { RearCouplerBar[carPosition].Source = new Rectangle(1 + idx * 6, 1, 6, 38); }
-                    else { RearCouplerBar[carPosition].Source = new Rectangle(1 + idx * 6, 41, 6, 38); }
+                    UpdateCouplerImage(car, carPosition);
                     carPosition++;
                 }
             }
@@ -156,6 +151,13 @@ namespace Orts.Viewer3D.Popups
             TrainPowerW = powerW;
             MinCouplerStrengthN = minCouplerBreakN;
             MinDerailForceN = minDerailForceN;
+        }
+
+        protected void UpdateCouplerImage(TrainCar car, int carPosition)
+        {
+            var idx = CalcBarIndex(car.SmoothedCouplerForceUN, car.Flipped);
+            if (car.WagonType == TrainCar.WagonTypes.Engine) { RearCouplerBar[carPosition].Source = new Rectangle(1 + idx * 6, 0, 6, 40); }
+            else { RearCouplerBar[carPosition].Source = new Rectangle(1 + idx * 6, 40, 6, 40); }
         }
 
         protected int CalcBarIndex( float forceN, bool flipped)

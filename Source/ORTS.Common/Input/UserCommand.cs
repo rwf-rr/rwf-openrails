@@ -46,6 +46,7 @@
         [GetString("Display Train Operations Window")] DisplayTrainOperationsWindow,
         [GetString("Display Train Dpu Window")] DisplayTrainDpuWindow,
         [GetString("Display Next Station Window")] DisplayNextStationWindow,
+        [GetString("Display Train Forces Window")] DisplayTrainForcesWindow,
         [GetString("Display Compass Window")] DisplayCompassWindow,
         [GetString("Display Train List Window")] DisplayTrainListWindow,
         [GetString("Display EOT List Window")] DisplayEOTListWindow,
