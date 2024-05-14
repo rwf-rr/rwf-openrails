@@ -42,7 +42,6 @@ namespace Orts.Viewer3D.Popups
         float TrainMassKg = 0.0f;
         float TrainPowerW = 0.0f;
         float MinCouplerStrengthN = ImpossibleHighForce;
-        float MinDerailForceN = ImpossibleHighForce;
 
         Image[] RearCouplerBar;
         static Texture2D BarTextures;
@@ -90,8 +89,6 @@ namespace Orts.Viewer3D.Popups
                 textbox.Add(new Label(5 * textHeight, textHeight, FormatStrings.FormatPower(TrainPowerW, false, false, false), LabelAlignment.Left));
                 textbox.Add(new Label(6 * textHeight, textHeight, Viewer.Catalog.GetString("Coupler Strength:"), LabelAlignment.Right));
                 textbox.Add(new Label(6 * textHeight, textHeight, FormatStrings.FormatForce(MinCouplerStrengthN, false), LabelAlignment.Left));
-                textbox.Add(new Label(6 * textHeight, textHeight, Viewer.Catalog.GetString("Derail Force:"), LabelAlignment.Right));
-                textbox.Add(new Label(6 * textHeight, textHeight, FormatStrings.FormatForce(MinDerailForceN, false), LabelAlignment.Left));
             }
             return vbox;
         }
@@ -128,7 +125,6 @@ namespace Orts.Viewer3D.Popups
             float massKg = 0.0f;
             float powerW = 0.0f;
             float minCouplerBreakN = ImpossibleHighForce;
-            float minDerailForceN = ImpossibleHighForce;
 
             foreach (var car in theTrain.Cars)
             {
@@ -142,7 +138,6 @@ namespace Orts.Viewer3D.Popups
                     // losely based on TrainCar.UpdateTrainRerailmentRisk
                     var numWheels = (wag.LocoNumDrvAxles + wag.GetWagonNumAxles()) * 2;
                     var derailForceN = (wag.MassKG / numWheels) * wag.GetGravitationalAccelerationMpS2();
-                    if (derailForceN < minDerailForceN) { minDerailForceN = derailForceN; }
                 }
                 if (car is MSTSLocomotive eng) { powerW += eng.MaxPowerW; }
             }
@@ -150,7 +145,6 @@ namespace Orts.Viewer3D.Popups
             TrainMassKg = massKg;
             TrainPowerW = powerW;
             MinCouplerStrengthN = minCouplerBreakN;
-            MinDerailForceN = minDerailForceN;
         }
 
         protected void UpdateCouplerImage(TrainCar car, int carPosition)
