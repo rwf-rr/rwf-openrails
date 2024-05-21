@@ -19,45 +19,41 @@
 
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
-using Orts.Formats.Msts;
 using Orts.Simulation.Physics;
 using Orts.Simulation.RollingStocks;
 using ORTS.Common;
-using SharpDX.Direct2D1;
-using SharpDX.MediaFoundation;
 using System;
-using System.Linq;
 
 namespace Orts.Viewer3D.Popups
 {
     public class TrainForcesWindow : Window
     {
-        const float ImpossibleHighForce = 9.999e8f;
+        const float HighCouplerStrengthN = 2.2e6f; // 500 klbf
+        const float ImpossiblyHighForce = 9.999e8f;
 
         Train PlayerTrain;
         int LastPlayerTrainCars;
         bool LastPlayerLocomotiveFlippedState;
 
-        float TrainLengthM = 0.0f;
-        float TrainMassKg = 0.0f;
-        float TrainPowerW = 0.0f;
-        float MinCouplerStrengthN = ImpossibleHighForce;
+        float MaxCouplerStrengthN = 0.0f;
+        float MinCouplerStrengthN = ImpossiblyHighForce;
 
-        Image[] RearCouplerBar;
-        static Texture2D BarTextures;
-        static Random Rnd = new Random();  // temporart, for testing
+        Image[] CouplerForceBarGraph;
+        static Texture2D ForceBarTextures;
+
+        Label MaxForceLabelValue;
 
         public TrainForcesWindow(WindowManager owner)
-            : base(owner, Window.DecorationSize.X + owner.TextFontDefault.Height * 80, Window.DecorationSize.Y + owner.TextFontDefault.Height * 6, Viewer.Catalog.GetString("Train Forces"))
+            : base(owner, Window.DecorationSize.X + owner.TextFontDefault.Height * 50, Window.DecorationSize.Y + owner.TextFontDefault.Height * 6, Viewer.Catalog.GetString("Train Forces"))
         {
         }
 
         protected internal override void Initialize()
         {
             base.Initialize();
-            if (BarTextures == null)
+            if (ForceBarTextures == null)
             {
-                BarTextures = SharedTextureManager.Get(Owner.Viewer.RenderProcess.GraphicsDevice, System.IO.Path.Combine(Owner.Viewer.ContentPath, "BarGraph.png"));
+                ForceBarTextures = SharedTextureManager.Get(Owner.Viewer.RenderProcess.GraphicsDevice, System.IO.Path.Combine(Owner.Viewer.ContentPath, "BarGraph.png"));
             }
         }
 
@@ -70,25 +66,24 @@ namespace Orts.Viewer3D.Popups
             if (PlayerTrain != null)
             {
                 SetConsistProperties(PlayerTrain);
-                RearCouplerBar = new Image[PlayerTrain.Cars.Count];
+                CouplerForceBarGraph = new Image[PlayerTrain.Cars.Count];
 
                 int carPosition = 0;
                 foreach (var car in PlayerTrain.Cars)
                 {
-                    scrollbox.Add(RearCouplerBar[carPosition] = new Image(6, 40));
-                    RearCouplerBar[carPosition].Texture = BarTextures;
+                    scrollbox.Add(CouplerForceBarGraph[carPosition] = new Image(6, 40));
+                    CouplerForceBarGraph[carPosition].Texture = ForceBarTextures;
                     UpdateCouplerImage(car, carPosition);
                     carPosition++;
                 }
+
                 var textbox = vbox.AddLayoutHorizontalLineOfText();
-                textbox.Add(new Label(5 * textHeight, textHeight, Viewer.Catalog.GetString("Length:"), LabelAlignment.Right));
-                textbox.Add(new Label(5 * textHeight, textHeight, FormatStrings.FormatShortDistanceDisplay( TrainLengthM, false), LabelAlignment.Left));
-                textbox.Add(new Label(5 * textHeight, textHeight, Viewer.Catalog.GetString("Weight:"), LabelAlignment.Right));
-                textbox.Add(new Label(5 * textHeight, textHeight, FormatStrings.FormatLargeMass(TrainMassKg, false, false), LabelAlignment.Left));
-                textbox.Add(new Label(5 * textHeight, textHeight, Viewer.Catalog.GetString("Power:"), LabelAlignment.Right));
-                textbox.Add(new Label(5 * textHeight, textHeight, FormatStrings.FormatPower(TrainPowerW, false, false, false), LabelAlignment.Left));
-                textbox.Add(new Label(6 * textHeight, textHeight, Viewer.Catalog.GetString("Coupler Strength:"), LabelAlignment.Right));
-                textbox.Add(new Label(6 * textHeight, textHeight, FormatStrings.FormatForce(MinCouplerStrengthN, false), LabelAlignment.Left));
+                textbox.Add(new Label(7 * textHeight, textHeight, Viewer.Catalog.GetString("Max Force:"), LabelAlignment.Right));
+                textbox.Add(MaxForceLabelValue = new Label(5 * textHeight, textHeight, FormatStrings.FormatLargeForce(0f, false), LabelAlignment.Right));
+                textbox.Add(new Label(9 * textHeight, textHeight, Viewer.Catalog.GetString("Coupler Strength:"), LabelAlignment.Right));
+                textbox.Add(new Label(5 * textHeight, textHeight, FormatStrings.FormatLargeForce(MinCouplerStrengthN, false), LabelAlignment.Right));
+                textbox.Add(new Label(1 * textHeight, textHeight, " - ", LabelAlignment.Center));
+                textbox.Add(new Label(5 * textHeight, textHeight, FormatStrings.FormatLargeForce(MaxCouplerStrengthN, false), LabelAlignment.Left));
             }
             return vbox;
         }
@@ -110,12 +105,20 @@ namespace Orts.Viewer3D.Popups
             }
             else if (PlayerTrain != null)
             {
+                var absMaxForceN = 0.0f; var forceSign = 1.0f;
+
                 int carPosition = 0;
                 foreach (var car in PlayerTrain.Cars)
                 {
                     UpdateCouplerImage(car, carPosition);
+
+                    var forceN = car.CouplerForceU; var absForceN = Math.Abs(forceN);
+                    if (absForceN > absMaxForceN) { absMaxForceN = absForceN; forceSign = forceN > 0 ? 1.0f : -1.0f; }
+
                     carPosition++;
                 }
+
+                if (MaxForceLabelValue != null) { MaxForceLabelValue.Text = FormatStrings.FormatLargeForce(absMaxForceN * forceSign, false); }
             }
         }
 
@@ -124,7 +127,8 @@ namespace Orts.Viewer3D.Popups
             float lengthM = 0.0f;
             float massKg = 0.0f;
             float powerW = 0.0f;
-            float minCouplerBreakN = ImpossibleHighForce;
+            float maxCouplerBreakN = 0.0f;
+            float minCouplerBreakN = ImpossiblyHighForce;
 
             foreach (var car in theTrain.Cars)
             {
@@ -134,37 +138,33 @@ namespace Orts.Viewer3D.Popups
                 {
                     var couplerBreakForceN = wag.GetCouplerBreak2N() > 1.0f ? wag.GetCouplerBreak2N() : wag.GetCouplerBreak1N();
                     if (couplerBreakForceN < minCouplerBreakN) { minCouplerBreakN = couplerBreakForceN; }
-
-                    // losely based on TrainCar.UpdateTrainRerailmentRisk
-                    var numWheels = (wag.LocoNumDrvAxles + wag.GetWagonNumAxles()) * 2;
-                    var derailForceN = (wag.MassKG / numWheels) * wag.GetGravitationalAccelerationMpS2();
+                    if (couplerBreakForceN > maxCouplerBreakN) { maxCouplerBreakN = couplerBreakForceN; }
                 }
                 if (car is MSTSLocomotive eng) { powerW += eng.MaxPowerW; }
             }
-            TrainLengthM = lengthM;
-            TrainMassKg = massKg;
-            TrainPowerW = powerW;
-            MinCouplerStrengthN = minCouplerBreakN;
+            MaxCouplerStrengthN = Math.Min( maxCouplerBreakN, HighCouplerStrengthN);
+            MinCouplerStrengthN = Math.Min(minCouplerBreakN, maxCouplerBreakN);
         }
 
         protected void UpdateCouplerImage(TrainCar car, int carPosition)
         {
-            var idx = CalcBarIndex(car.SmoothedCouplerForceUN, car.Flipped);
-            if (car.WagonType == TrainCar.WagonTypes.Engine) { RearCouplerBar[carPosition].Source = new Rectangle(1 + idx * 6, 0, 6, 40); }
-            else { RearCouplerBar[carPosition].Source = new Rectangle(1 + idx * 6, 40, 6, 40); }
+            var idx = CalcBarIndex(car.SmoothedCouplerForceUN);
+            if (car.WagonType == TrainCar.WagonTypes.Engine) { CouplerForceBarGraph[carPosition].Source = new Rectangle(1 + idx * 6, 0, 6, 40); }
+            else { CouplerForceBarGraph[carPosition].Source = new Rectangle(1 + idx * 6, 40, 6, 40); }
         }
 
-        protected int CalcBarIndex( float forceN, bool flipped)
+        protected int CalcBarIndex( float forceN)
         {
+            // the image has 19 icons, 0 is max push, 9 is neutral, 18 is max pull
             var idx = 9;
             var absForceN = Math.Abs(forceN);
             if (absForceN > 1000f && MinCouplerStrengthN > 1000f)
             {
-                var relForce = absForceN / MinCouplerStrengthN * 9f + 1f;
-                var log10Force = Math.Log10(relForce);
-                //if ((forceN < 0f) != flipped) { log10Force *= -1; }
-                if (forceN > 0f) { log10Force *= -1; }
-                idx = (int)(log10Force * 9f) + 9;
+                // TODO: for push force, may need to scale differently (how?); containers derail at 300 klbf
+                var relForce = absForceN / MinCouplerStrengthN;
+                var expForce = Math.Pow(9, relForce);
+                idx = (int)Math.Floor(expForce);
+                idx = (forceN > 0f) ? idx * -1 + 9: idx + 9; // positive force is push
                 if (idx < 0) { idx = 0; } else if (idx > 18) { idx = 18; }
             }
             return idx;
