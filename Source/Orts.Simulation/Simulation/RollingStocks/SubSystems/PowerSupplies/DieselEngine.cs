@@ -17,6 +17,7 @@
 
 using Microsoft.Xna.Framework;
 using Orts.Parsers.Msts;
+using Orts.Simulation.RollingStocks.SubSystems.Brakes;
 using Orts.Simulation.RollingStocks.SubSystems.PowerTransmissions;
 using ORTS.Common;
 using ORTS.Scripting.Api;
@@ -398,6 +399,7 @@ namespace Orts.Simulation.RollingStocks.SubSystems.PowerSupplies
             labels.AppendFormat("{0}{1}", Simulator.Catalog.GetString("Load"), tabs);
             labels.AppendFormat("{0}{1}", Simulator.Catalog.GetString("RPM"), tabs);
             labels.AppendFormat("{0}{1}", Simulator.Catalog.GetString("Flow"), tabs);
+            labels.AppendFormat("{0}{1}", Simulator.Catalog.GetString("Brake Cylinder"), tabs);
             labels.AppendFormat("{0}{1}", Simulator.Catalog.GetString("Temperature"), tabs);
             labels.AppendFormat("{0}{1}", Simulator.Catalog.GetString("Oil Pressure"), tabs);
             return labels.ToString();
@@ -468,6 +470,8 @@ namespace Orts.Simulation.RollingStocks.SubSystems.PowerSupplies
             result.AppendFormat("\t{0:F1}%", eng.LoadPercent);
             result.AppendFormat("\t{0:F0} {1}", eng.RealRPM, FormatStrings.rpm);
             result.AppendFormat("\t{0}", FormatStrings.FormatAirFlow(Locomotive.FilteredBrakePipeFlowM3pS, Locomotive.IsMetric));
+            var brakeCylValue = Locomotive.BrakeSystem != null ? Math.Round(Locomotive.BrakeSystem.GetCylPressurePSI()).ToString() + " psi" : "?";
+            result.AppendFormat("\t{0}", brakeCylValue);
             result.AppendFormat("\t{0}", FormatStrings.FormatTemperature(eng.DieselTemperatureDeg, Locomotive.IsMetric, false));
             result.AppendFormat("\t{0}", FormatStrings.FormatPressure(eng.DieselOilPressurePSI, PressureUnit.PSI, Locomotive.MainPressureUnit, true));
 
