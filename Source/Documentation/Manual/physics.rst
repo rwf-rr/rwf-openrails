@@ -91,11 +91,12 @@ Alternatively the low-speed friction force can be manually specified by the user
 When running on a curve and if the
 :ref:`Curve dependent resistance <options-curve-resistance>` option is
 enabled, additional resistance is calculated, based on the curve radius,
-rigid wheel base, track gauge and super elevation. The curve resistance
+rigid wheel base, track gauge and superelevation. The curve resistance
 has its lowest value at the curve's optimal speed. Running at higher or
 lower speed causes higher curve resistance. The worst situation is
 starting a train from zero speed. The track gauge value can be set by
-``ORTSTrackGauge`` parameter, otherwise 1435 mm is used. The rigid wheel base
+``ORTSTrackGauge`` parameter, otherwise the gauge is assumed to be the
+gauge specified in the route's .trk file. The rigid wheel base
 can be also set by ``ORTSRigidWheelBase``, otherwise the value is estimated.
 Further details are discussed later.
 
@@ -1224,6 +1225,7 @@ locomotive can be thought of in terms of the following broadly defined
 components:
 
 - Boiler and Fire (Heat conversion)
+- Fuel Type
 - Cylinder (Work done)
 
 Boiler and Fire (Heat conversion)
@@ -1246,7 +1248,7 @@ the Boiler Evaporation Area.
   contact with the boiler and the heat tubes running through the boiler.
   This area determined the amount of heat that could be transferred to
   the water in the boiler. As a rule of thumb a boiler could produce
-  approximately 12-15 lbs/h of steam per ft\ :sup:`2` of evaporation area.
+  approximately 12-15 lbs/h of steam per ft\ :sup:`2` of evaporation area (coal fired).
 - *Boiler Superheater Area* -- Typically modern steam locomotives are
   superheated, whereas older locomotives used only saturated steam.
   Superheating is the process of putting more heat into the steam
@@ -1254,6 +1256,52 @@ the Boiler Evaporation Area.
   and allowed the locomotive to produce more work, but with a reduction
   in steam and fuel usage. In other words a superheated locomotive
   tended to be more efficient then a saturated locomotive.
+
+Fuel Type
+.........
+
+Different fuel types will produce different levels of heat. For example,
+Coal has a fuel calorific value of around 13,800 BTU/lb, whereas Wood may 
+have values of between 3,000 and 7,000 BTU/lb (depending upon the condition 
+of the wood fuel), and Oil (Diesel) may have a value up around 17,000 BTU/lb.
+
+Hence the variations in fuel calorific value can dramatically impact the 
+amount of steam that it is able to produce and ultimately the performance of 
+the steam locomotive.
+
+Hence Open Rails supports the use of different fuel types for steam locomotives, 
+and these different fuel types can be configured with the following parameters.
+
+``ORTSSteamLocomotiveFuelType`` - indicates the type of fuel used by the locomotive - 
+currently Wood, Coal or Oil are available. Defaults to Coal.
+
+``ORTSMaxTenderWoodMass`` - amount of wood mass in tender (in ENG file)
+
+``ORTSTenderWagonWoodMass`` - amount of wood mass in tender (in tender WAG file - overwrites 
+the above value - non mandatory).
+
+``ORTSSteamLocomotiveFeedwaterSystemType`` - Older steam locomotives were fitted with 
+motion pumps to transfer water from the tender into the boiler. Steam injectors were 
+fitted to new locomotives from the 1860s. Currently MotionPump or Injector available. 
+Defaults to Injector.
+
+*FuelWood* is used in any IntakePoint statements used, and route fuel points need to 
+be set as wood type.
+
+``ORTSFuelOilHeatingRequired`` - some locomotives required the oil in the tender to be 
+steam heated, set to 1 (true) if this is the case. Defaults to false.
+
+``ORTSFuelOilSpecificGravity`` - specific gravity of the oil used as fuel on the locomotive.
+
+``ORTSMaxTenderFuelOilVolume`` - volume of oil carried in the tender, typically in gallons 
+or litres. (in ENG file)
+
+``ORTSTenderWagonFuelOilVolume`` - volume of oil carried in the tender, typically in gallons 
+or litres. (in tender WAG file  - overwrites the above value - non mandatory).
+
+*FuelDiesel* - is used in any IntakePoint statements, and route fuel points need to be set 
+as diesel type.
+
 
 Cylinder (Work done)
 ....................
@@ -2368,9 +2416,9 @@ present for simplicity.
    single: ORTSDPBrakeSynchronization
 
 By default, Open Rails will treat remote groups as manned helpers who typically
-would not assist in train brake operations, so only independent brakes will synchronize.
-To enable train brake synchronization, the token ``engine(ORTSDPBrakeSynchronization(``
-should be used. The valid settings for ``ORTSDPBrakeSynchronization`` are as follows:
+would not assist in train brake operations. To enable brake synchronization,
+the token ``engine(ORTSDPBrakeSynchronization(`` should be used.
+The valid settings for ``ORTSDPBrakeSynchronization`` are as follows:
 
 - ``"Apply"``: DP units will reduce the brake pipe pressure locally to match the
   equalizing reservoir pressure of the controlling locomotive. (The controlling
@@ -2385,10 +2433,6 @@ should be used. The valid settings for ``ORTSDPBrakeSynchronization`` are as fol
   controlling locomotive, and will automatically bail-off automatic brake
   applications if needed. (The controlling locomotive must also have the
   ``"Independent"`` setting.)
-                - NOTE: Although ``"Independent"`` is enabled by default,
-                  if ``ORTSDPBrakeSynchronization`` is present in the .eng
-                  file but ``"Independent"`` is not specified as an option,
-                  independent brakes will NOT be synchronized.
 
 All settings can be combined as needed, simply place a comma between each setting
 in the string: ``ORTSDPBrakeSynchronization("Apply, Release, Emergency, Independent")``
@@ -2484,9 +2528,6 @@ be about 1 minute for every 12 cars. If the *Brake Pipe Charging Rate*
 (psi/s) value is set to 1000, the pipe pressure gradient features
 will be disabled and will also disable some but not all of the other new
 brake features.
-
-Brake system charging time depends on the train length as it should, but
-at the moment there is no modeling of main reservoirs and compressors.
 
 For EP brakes, two variants are available:
 
@@ -3103,6 +3144,9 @@ the following parameters will adjust the behaviour of air brakes:
 .. index::
    single: DynamicBrakeHasAutoBailOff
    single: ORTSDynamicBrakesHasPartialBailOff
+   single: ORTSTrainDynamicBlendingTable
+   single: ORTSDynamicBrakeReplacementWithEngineBrake 
+   single: ORTSDynamicBrakeReplacementWithEngineBrakeAtSpeed
    
 - ``Engine(DynamicBrakeHasAutoBailOff`` -- Set to 1 if brake cylinders are
   emptied while dynamic brake is active
@@ -3142,9 +3186,16 @@ notch of the train brake controller, where 0 means no dynamic brake and 1 means 
         )
     )
   )
+Dynamic braking is not effective at low speeds. Thus, in some locomotives,
+dynamic brake application demanded by the train brake controller is replaced by
+`engine` air braking at low speeds. This effect can be activated setting
+``Engine(ORTSDynamicBrakeReplacementWithEngineBrake`` to 1, provided that the locomotive
+speed is below ``Engine(ORTSDynamicBrakeReplacementWithEngineBrakeAtSpeed``.
 
 Native Open Rails Braking Parameters
 ------------------------------------
+
+.. _physics-braking-parameters:
 
 Open Rails has implemented additional specific braking parameters to
 deliver realism in braking performance in the simulation.
@@ -3156,20 +3207,37 @@ MaxAuxilaryChargingRate and EmergencyResChargingRate.
 
 .. index::
    single: BrakePipeVolume
+   single: ORTSBrakeForceReferencePressure
+   single: ORTSAuxiliaryResCapacity
    single: ORTSBrakeCylinderVolume
+   single: ORTSBrakeCylinderPipingVolume
+   single: ORTSBrakeCylinderDiameter
+   single: ORTSBrakeCylinderPistonTravel
+   single: ORTSNumberBrakeCylinders
    single: ORTSEmergencyValveActuationRate
    single: ORTSEmergencyDumpValveRate
    single: ORTSEmergencyDumpValveTimer
+   single: ORTSEmergencyQuickAction
    single: ORTSEmergencyResQuickRelease
    single: ORTSMainResPipeAuxResCharging
    single: ORTSBrakeRelayValveRatio
+   single: ORTSBrakeRelayValveInshot
    single: ORTSEngineBrakeRelayValveRatio
+   single: ORTSEngineBrakeRelayValveInshot
    single: ORTSBrakeRelayValveApplicationRate
    single: ORTSBrakeRelayValveReleaseRate
    single: ORTSMaxTripleValveCylinderPressure
    single: ORTSMaxServiceCylinderPressure
+   single: ORTSMaxServiceApplicationRate
+   single: ORTSTwoStageLowPressure
+   single: ORTSTwoStageRelayValveRatio
+   single: ORTSTwoStageIncreasingSpeed
+   single: ORTSTwoStageDecreasingSpeed
+   single: ORTSHighSpeedReducingPressure
    single: ORTSUniformChargingThreshold
    single: ORTSUniformChargingRatio
+   single: ORTSUniformReleaseThreshold
+   single: ORTSUniformReleaseRatio
    single: ORTSQuickServiceLimit
    single: ORTSQuickServiceApplicationRate
    single: ORTSQuickServiceVentRate
@@ -3187,6 +3255,9 @@ MaxAuxilaryChargingRate and EmergencyResChargingRate.
    single: ORTSBrakePipeTimeFactor
    single: ORTSEPBrakeControlsBrakePipe
    single: ORTSCompressorIsMuControlled
+   single: Supply_Reservoir
+   single: ORTSSupplyResCapacity
+   single: ORTSSupplyResChargingRate
 
 - ``Wagon(BrakePipeVolume`` -- Volume of car's brake pipe in cubic feet
   (default .5).
@@ -3200,10 +3271,40 @@ MaxAuxilaryChargingRate and EmergencyResChargingRate.
   brake servicetimefactor instead, but the Open Rails Development team
   doesn't believe this is worth the effort by the user for the added
   realism.
-- ``Wagon(ORTSBrakeCylinderVolume`` - Volume of car's brake cylinder. This allows
-  specifying the brake cylinder volume independently of triple valve ratio.
-  This is useful when the cylinder is not directly attached to a triple valve,
-  e. g. when a relay valve exists.
+- ``Wagon(ORTSBrakeForceReferencePressure`` -- The brake cylinder
+  pressure at which the brake force entered in ``MaxBrakeForce`` or
+  ``ORTSMaxBrakeShoeForce`` occurs. If this value is not defined,
+  ``BrakeCylinderPressureForMaxBrakeBrakeForce`` is used as the
+  reference pressure.
+- ``Wagon(ORTSAuxiliaryResCapacity`` -- Volume of the car's auxiliary
+  reservoir. Normally determined automatically given the emergency res
+  volume, but can be entered manually if the car has no emergency res.
+- ``Wagon(ORTSBrakeCylinderVolume`` -- Volume of each brake cylinder on
+  the car. This allows specifying the brake cylinder volume independently
+  of triple valve ratio. This is useful when the cylinder is not directly
+  attached to a triple valve, e. g. when a relay valve exists.
+- ``Wagon(ORTSBrakeCylinderDiameter`` -- If brake cylinder dimensions are
+  available, this can be used to set the diameter of the piston in each
+  brake cylinder. WARNING: Applying this token will enable a more realistic
+  simulation of brake cylinder pressure which may require adjustments to
+  brake system parameters to produce the desired brake cylinder pressure.
+- ``Wagon(ORTSBrakeCylinderPistonTravel`` -- The length of brake cylinder
+  extension when the brakes are applied at 50 psi (3.5 bar). Larger travel
+  leads to larger brake cylinder volume, and volume will increase as the
+  brake cylinder pressurizes. (Default 7.5 inches.)
+- ``Wagon(ORTSCylinderSpringPressure`` -- The brake cylinder pressure
+  at which the brake cylinder piston reaches full extension. Below this
+  pressure, no brake force will be developed (default 5 psi).
+- ``Wagon(ORTSBrakeCylinderPipingVolume`` -- The volume of the piping between
+  the brake valve and each brake cylinder, including any volume of air in the
+  brake cylinder when released. This volume does not change as the brake
+  cylinder extends, but can still affect the final brake cylinder pressure.
+  If not specified, Open Rails will automatically calculate a volume to
+  produce appropriate brake cylinder pressures from the given `TripleValveRatio`.
+  A warning will be produced if the automatic calculation cannot determine
+  a suitable piping volume.
+- ``Wagon(ORTSNumberBrakeCylinders`` -- Sets the number of brake cylinders
+  on the car, multiplies the brake cylinder volume. (Default 1 brake cylinder.)
 - ``Wagon(ORTSEmergencyValveActuationRate`` -- Threshold rate for emergency
   brake actuation of the triple valve. If the pressure in the brake pipe
   decreases at a higher rate than specified, the triple valve will switch to
@@ -3213,12 +3314,19 @@ MaxAuxilaryChargingRate and EmergencyResChargingRate.
 - ``Wagon(ORTSEmergencyDumpValveTimer`` -- Timer for emergency dump valve to close
   after it is activated. If set to 0, it will close as soon as BP is discharged.
   Default value will prevent BP from being charged for 2 minutes.
+- ``Wagon(ORTSEmergencyQuickAction`` -- If set to 1, air from the brake pipe will
+  be sent to the brake cylinder at MaxApplicationRate during emergency applications.
+  Speeds up emergency application along the entire train. (default 0)
 - ``Wagon(ORTSEmergencyResQuickRelease`` -- Set to 1 (default 0) to enable quick release,
   in which emergency reservoir air is used to increase the brake pipe pressure
-  during release. Remains active until brake cylinder pressure drops below 5 psi.
+  during release. Remains active until aux res has recharged. For systems with a
+  dedicated quick release reservoir but without higher brake cylinder pressure in
+  emergency, set this to 2 to disable use of the emergency res for brake cylinder pressure. 
 - ``Wagon(ORTSMainResPipeAuxResCharging`` -- Boolean value that indicates,
   for twin pipe systems, if the main reservoir pipe is used for charging the auxiliary
-  reservoirs. If set to false, the main reservoir pipe will not be used
+  reservoirs. Alternately, if equipped with a supply reservoir, the supply reservoir
+  will charge from the main reservoir pipe instead. If set to false, the main reservoir
+  pipe will not be used (default: true).
   by the brake system.
 - ``Wagon(ORTSEPBrakeControlsBrakePipe`` -- Set to 1 for UIC EP brake: brake pipe
   pressure is electrically controlled at every fitted car.
@@ -3227,7 +3335,17 @@ MaxAuxilaryChargingRate and EmergencyResChargingRate.
   This is achieved via a relay valve which sets BC pressure proportionally.
   Relay valves may be installed to achieve higher brake cylinder pressures,
   dynamic brake blending or variable load compensation.
-- ``Wagon(ORTSBrakeRelayValveRatio`` -- Same as above, but for the engine brake
+- ``Wagon(ORTSBrakeRelayValveInshot`` -- Sets the "in-shot" pressure for the relay
+  valve. If set to a positive value, this pressure will be added to the brake
+  cylinder across the entire range of relay valve application. If set to a negative
+  value, this pressure will override the brake cylinder pressure only if the relay
+  valve application is lower than this pressure. In either case, this sets a minimum brake
+  cylinder pressure. Many step down relay valves (ratio less than 1) utilize
+  in-shot to ensure brake cylinders extend fully for light train brake applications.
+- ``Wagon(ORTSEngineBrakeRelayValveRatio`` -- Same as ``ORTSBrakeRelayValveRatio``,
+  but for the engine brake.
+- ``Wagon(ORTSEngineBrakeRelayValveInshot`` -- Same as ``ORTSBrakeRelayValveInshot``,
+  but for the engine brake.
 - ``Wagon(ORTSBrakeRelayValveApplicationRate`` -- Brake cylinder pressure application
   rate achieved by the relay valve, if fitted.
 - ``Wagon(ORTSBrakeRelayValveReleaseRate`` -- Brake cylinder pressure release
@@ -3239,22 +3357,45 @@ MaxAuxilaryChargingRate and EmergencyResChargingRate.
 - ``Wagon(ORTSMaxServiceCylinderPressure`` -- Sets the maximum cylinder pressure
   demanded during service applications. During emergency applications,
   brake cylinder pressure is instead limited by ``ORTSMaxTripleValveCylinderPressure``.
+- ``Wagon(ORTSMaxServiceApplicationRate`` -- Sets the maximum application rate
+  allowed during service applications. For emergency applications, the application
+  rate will be limited by ``MaxApplicationRate``.
+- ``Wagon(ORTSTwoStageLowPressure`` -- For two stage braking systems where brake force
+  changes depending on train speed, this sets the maximum cylinder pressure demanded
+  when in low speed mode (defaults to 0, disabling two stage braking). For high speed
+  mode, use ``ORTSMaxServiceCylinderPressure`` to set the pressure limit.
+- ``Wagon(ORTSTwoStageRelayValveRatio`` -- Alternatey, sets a relay valve ratio to
+  be used by the two stage system in low speed mode. At high speeds, the relay valve
+  uses the ratio set by ``ORTSBrakeRelayValveRatio``.
+- ``Wagon(ORTSTwoStageIncreasingSpeed`` -- The speed at which the two stage braking
+  system changes from low speed mode to high speed mode during acceleration.
+- ``Wagon(ORTSTwoStageDecreasingSpeed`` -- The speed at which the two stage braking
+  system changes from high speed mode to low speed mode during deceleration.
+- ``Wagon(ORTSHighSpeedReducingPressure`` -- If the demanded brake cylinder pressure
+  exceeds this value, the brakes will gradually release to this pressure. Simulates
+  the high speed reducing valve (HSRV). (default 0 for wagons with no HSRV)
 - ``Wagon(ORTSUniformChargingThreshold`` -- The pressure difference between the brake
   pipe and auxiliary reservoir at which uniform charging activates during release
   (default 3 psi), usually used to reduce the rate of auxiliary reservoir charging.
 - ``Wagon(ORTSUniformChargingRatio`` -- Factor used to divide auxiliary reservoir
   charging rate by when uniform charging is active. Eg: setting of 2 will halve
   charging rate while uniform charging is active (defaults to 0, disabling the feature).
+- ``Wagon(ORTSUniformReleaseThreshold`` -- The pressure difference between the brake
+  pipe and auxiliary reservoir at which uniform release activates during release
+  (default 3 psi), usually used to reduce the rate of brake cylinder release.
+- ``Wagon(ORTSUniformReleaseRatio`` -- Factor used to divide brake cylinder
+  release rate by when uniform release is active. Eg: setting of 2 will halve
+  release rate while uniform release is active (defaults to 0, disabling the feature).
 - ``Wagon(ORTSQuickServiceLimit`` -- Quick service activates when triple valve
   initially changes from release to apply, and will remain active until brake
   cylinder pressure reaches the pressure specified here (default 0,
   which disables quick service).
 - ``Wagon(ORTSQuickServiceApplicationRate`` -- Optional setting for brake cylinder
-  application rate during quick service, can be used to increase speed of initial
+  application rate used during quick service, can be used to increase speed of initial
   applications. Has no effect if set lower than ``MaxApplicationRate`` (default 0).
-- ``Wagon(ORTSQuickServiceVentRate`` -- Optional ability for the brake pipe
-  pressure to be locally reduced at the specified rate while quick service is active
-  (default 0).
+- ``Wagon(ORTSQuickServiceVentRate`` -- Dramatically speeds up propagation of initial
+  applications by venting the wagon brake pipe pressure at the specified rate until
+  an initial application has been established (default 0).
 - ``Wagon(ORTSAcceleratedApplicationFactor`` -- Triple valves can speed up applications
   by measuring the rate of brake pipe reduction, multiplying the reduction
   by the factor specified here, then locally venting that amount of brake pipe air.
@@ -3267,9 +3408,18 @@ MaxAuxilaryChargingRate and EmergencyResChargingRate.
 - ``Wagon(ORTSInitialApplicationThreshold`` -- The pressure difference between
   the brake pipe and auxiliary reservoir at which the triple valve will
   change from release to apply (default 1 psi).
-- ``Wagon(ORTSCylinderSpringPressure`` -- Below the specified pressure, no
-  brake force will be developed, simulating the pressure required to
-  overcome the brake cylinder return spring (default 0).
+- ``BrakeEquipmentType(Supply_Reservoir`` -- Adds a supply reservoir to the
+  loco or wagon, which will constantly charge to the brake pipe pressure
+  or MR pipe (if equipped) pressure. If a supply reservoir is equipped,
+  supply res air will be used to pressurize the brake cylinders thru the relay
+  valve. This allows for a small, fast charging auxiliary reservoir to
+  be used with large brake cylinders.
+- ``Wagon(ORTSSupplyResCapacity`` -- Volume of the supply reservoir. Larger
+  volumes relative to the brake cylinder volume allow for more brake applications.
+  Can also be implemented as ``Engine(ORTSSupplyResCapacity`` for engines.
+- ``Wagon(ORTSSupplyResChargingRate`` -- The rate at which the pressure of the
+  supply reservoir will increase when charging from the brake pipe or MR pipe.
+  Can also be implemented as ``Engine(ORTSSupplyResChargingRate`` for engines.
 - ``Engine(ORTSMainResChargingRate`` -- Rate of main reservoir pressure change
   in psi per second when the compressor is on (default .4).
 - ``Engine(ORTSEngineBrakeReleaseRate`` -- Rate of engine brake pressure
@@ -3714,10 +3864,10 @@ hence were favoured for routes with tight curves.
 
 The value used for the rigid wheelbase is shown as W in figure
 
-Impact of Super Elevation
--------------------------
+Impact of Superelevation
+------------------------
 
-On any curve whose outer rail is super-elevated there is, for any car, one
+On any curve whose outer rail is superelevated there is, for any car, one
 speed of operation at which the car trucks have no more tendency to run
 toward either rail than they have on straight track, where both rail-heads
 are at the same level (known as the equilibrium speed). At lower speeds the
@@ -3748,7 +3898,7 @@ the track curvature. This excess being a variable element of curve
 resistance, we may expect to find that curve resistance reaches a minimum
 value when this excess reduces to zero, that is, when the car speed reaches
 the critical value referred to. This critical speed depends only on the
-super-elevation, the track gauge, and the radius of the track curvature.
+superelevation, the track gauge, and the radius of the track curvature.
 The resulting variation of curve resistance with speed is indicated in
 diagram below.
 
@@ -3887,8 +4037,8 @@ up grade) per ton per degree of curve.
 
 .. _physics-curve-speed-limit:
 
-Super Elevation (Curve Speed Limit) -- Theory
-=============================================
+Superelevation (Curve Speed Limit) -- Theory
+============================================
 
 Introduction
 ------------
@@ -3955,8 +4105,8 @@ following drawing, illustrates the basic concept described. Lateral
 displacement of the centre of gravity permitted by the suspension system of
 the rolling stock is not illustrated.
 
-Use of Super Elevation
-----------------------
+Use of Superelevation
+---------------------
 
 .. figure:: images/physics-superelevation-forces-with.png
     :align: right
@@ -3967,22 +4117,22 @@ In order to counteract the effect of centrifugal force Fc the outside rail
 of the curve may be elevated above the inside rail, effectively moving the
 centre of gravity of the rolling stock laterally toward the inside rail.
 
-This procedure is generally referred to as super elevation. If the
+This procedure is generally referred to as superelevation. If the
 combination of lateral displacement of the centre of gravity provided by
-the super elevation, velocity of the rolling stock and radius of curve is
+the superelevation, velocity of the rolling stock and radius of curve is
 such that resulting force Fr becomes centred between and perpendicular to a
 line across the running rails the downward pressure on the outside and
-inside rails of the curve will be the same. The super elevation that
+inside rails of the curve will be the same. The superelevation that
 produces this condition for a given velocity and radius of curve is known
 as the balanced or equilibrium elevation.
 
-Limitation of Super Elevation in Mixed Passenger & Freight Routes
------------------------------------------------------------------
+Limitation of Superelevation in Mixed Passenger & Freight Routes
+----------------------------------------------------------------
 
 Typical early railway operation resulted in rolling stock being operated at
 less than equilibrium velocity (all wheels equally sharing the rolling
 stock weight ), or coming to a complete stop on curves. Under such
-circumstances excess super elevation may lead to a downward force
+circumstances excess superelevation may lead to a downward force
 sufficient to damage the inside rail of the curve, or cause derailment of
 rolling stock toward the centre of the curve when draft force is applied to
 a train. Routine operation of loaded freight trains at low velocity on a
@@ -3990,15 +4140,15 @@ curve superelevated to permit operation of higher velocity passenger trains
 will result in excess wear of the inside rail of the curve by the freight
 trains.
 
-Thus on these types of routes, super elevation is generally limited to no
+Thus on these types of routes, superelevation is generally limited to no
 more than 6 inches.
 
-Limitation of Super Elevation in High Speed Passenger Routes
-------------------------------------------------------------
+Limitation of Superelevation in High Speed Passenger Routes
+-----------------------------------------------------------
 
 Modern high speed passenger routes do not carry slower speed trains, nor
 expect trains to stop on curves, so it is possible to operate these routes
-with higher track super elevation values. Curves on these types of route
+with higher track superelevation values. Curves on these types of route
 are also designed with a relatively gentle radius, and are typically in
 excess of 2000m (2km) or 7000m (7km) depending on the speed limit of the
 route.
@@ -4011,7 +4161,7 @@ route.
 |Horizontal curve radius|10000  |7000   |7000   |7000   |4000   |
 |(m)                    |(10km) |(7km)  |(7km)  |(7km)  |(4km)  |
 +-----------------------+-------+-------+-------+-------+-------+
-|Super elevation (mm)   |180    |170    |150    |130    |180    |
+|Superelevation (mm)    |180    |170    |150    |130    |180    |
 +-----------------------+-------+-------+-------+-------+-------+
 |Max Grade (mm/m)       |35     |40     |12.5   |25     |15     |
 +-----------------------+-------+-------+-------+-------+-------+
@@ -4041,19 +4191,19 @@ as maximum comfortable velocity or comfortable speed. Operating experience
 with conventional passenger cars has led to the generally accepted
 practice, circa 1980, of designating the maximum velocity for a given curve
 to be equal to the result for the calculation of equilibrium velocity with
-an extra amount added to the actual super elevation that will be applied to
-the curve. This is often referred to as unbalanced super elevation or cant
+an extra amount added to the actual superelevation that will be applied to
+the curve. This is often referred to as unbalanced superelevation or cant
 deficiency. Tilt trains have been introduced to allow faster train
 operation on tracks not originally designed for *high speed* operation, as
 well as high speed railway operation. The tilting of the passenger cab
-allows greater values of unbalanced super elevation to be used.
+allows greater values of unbalanced superelevation to be used.
 
 Limitation of Velocity on Curved Track at Zero Cross Level
 ----------------------------------------------------------
 
 The concept of maximum comfortable velocity may also be used to determine
 the maximum velocity at which rolling stock is permitted to round curved
-track without super elevation and maintained at zero cross level. The lead
+track without superelevation and maintained at zero cross level. The lead
 curve of a turnout located between the heel of the switch and the toe of
 the frog is an example of curved track that is generally not super
 elevated. Other similar locations would include yard tracks and industrial
@@ -4093,32 +4243,32 @@ follows:
 
 Where:
 
-- E = Ea (track super elevation) + Ec (unbalanced super elevation)
+- E = Ea (track superelevation) + Ec (unbalanced superelevation)
 - g = acceleration due to gravity
 - r = radius of curve
 - G = track gauge
 
-Typical Super Elevation Values & Speed Impact -- Mixed Passenger & Freight Routes
+Typical Superelevation Values & Speed Impact -- Mixed Passenger & Freight Routes
 ---------------------------------------------------------------------------------
 
 The values quoted below are "typical" but may vary from country to country.
 
-Track super elevation typically will not be more than 6 inches (150mm).
+Track superelevation typically will not be more than 6 inches (150mm).
 Naturally, depending upon the radius of the curve, speed restrictions may
 apply.
 
-Normally unbalanced super elevation is typically restricted to 3 inches
+Normally unbalanced superelevation is typically restricted to 3 inches
 (75mm), and is usually only allowed for passenger stock.
 
 Tilt trains may have values of up to 12 inches (305mm).
 
-Typical Super Elevation Values & Speed Impact -- High Speed Passenger Routes
+Typical Superelevation Values & Speed Impact -- High Speed Passenger Routes
 ----------------------------------------------------------------------------
 
 +-------------------------------+-------------------+-----------------------+
 |                               |Cant D             |Cant deficiency        |
-|                               |(SuperElevation)   |(Unbalanced            |
-|                               |(mm)               |SuperElevation) I (mm) |
+|                               |(Superelevation)   |(Unbalanced            |
+|                               |(mm)               |Superelevation) I (mm) |
 +===============================+===================+=======================+
 |CEN (draft) -- Tilting trains  |180--200           |300                    |
 +-------------------------------+-------------------+-----------------------+
@@ -4140,21 +4290,21 @@ Typical Super Elevation Values & Speed Impact -- High Speed Passenger Routes
 |UK -- Tilting trains           |180                |300                    |
 +-------------------------------+-------------------+-----------------------+
 
-**Table: Super Elevation limits (source - Tracks for tilting trains - A
+**Table: Superelevation limits (source - Tracks for tilting trains - A
 study within the Fast And Comfortable Trains (FACT) project by B. Kufver,
 R. Persson)**
 
 .. _physics-curve-speed-limit-application:
 
-Super Elevation (Curve Speed Limit) Application in OR
-=====================================================
+Superelevation (Curve Speed Limit) Application in OR
+====================================================
 
 Open Rails implements this function, and has *standard* default values
 applied. The user may elect to specify some of the standard parameters used
 in the above formula.
 
-OR Super Elevation Parameters
------------------------------
+OR Superelevation Parameters
+----------------------------
 
 .. index::
    single: ORTSUnbalancedSuperElevation
@@ -4166,8 +4316,8 @@ Typical OR parameters can be entered in the Wagon section of the .wag or
     ORTSUnbalancedSuperElevation ( 3in )
     ORTSTrackGauge( 4ft 8.5in)
 
-OR Super Elevation Default Values
----------------------------------
+OR Superelevation Default Values
+--------------------------------
 
 The above values can be entered into the relevant files, or alternatively
 OR will default to the following functionality.
@@ -4184,7 +4334,7 @@ above classifications.
 
 Track gauge will default to the standard value of 4' 8.5" (1435mm).
 
-Unbalancedsuperelevation (Cant Deficiency) will be determined from the
+Unbalanced superelevation (Cant Deficiency) will be determined from the
 value entered by the user, or will default to the following values:
 
 - Conventional Freight -- 0" (0mm)
@@ -4192,7 +4342,7 @@ value entered by the user, or will default to the following values:
 - Engines & tenders -- 6" (150mm)
 
 Tilting trains require the addition of the relevant
-unbalancedsuperelevation information to the relevant rolling stock files.
+unbalanced superelevation information to the relevant rolling stock files.
 
 .. _physics-tunnel-friction:
 

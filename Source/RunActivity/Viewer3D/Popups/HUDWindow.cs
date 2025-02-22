@@ -476,7 +476,7 @@ namespace Orts.Viewer3D.Popups
             TableAddLabelValue(table, Viewer.Catalog.GetString("FPS"), "{0:F0}", Viewer.RenderProcess.FrameRate.SmoothedValue);
             TableAddLine(table);
 
-            if (Viewer.PlayerLocomotive.Train.TrainType == Train.TRAINTYPE.AI_PLAYERHOSTING)
+            if (Viewer.PlayerLocomotive.Train.TrainType == Train.TRAINTYPE.AI_PLAYERHOSTING || Viewer.PlayerLocomotive.Train.Autopilot)
                 TableAddLine(table, Viewer.Catalog.GetString("Autopilot") + "???");
 
             if (Viewer.PlayerTrain.HuDIsWheelSlip)
@@ -608,7 +608,7 @@ namespace Orts.Viewer3D.Popups
 
                 foreach (var axle in car.WheelAxles)
                 {
-                    if (!axle.Part.bogie) // if not a bogie then check for the number of axles.
+                    if (!axle.Part.Bogie) // if not a bogie then check for the number of axles.
                     {
                         if (currentBogie != axle.BogieIndex && currentCount != 0)
                         {
@@ -632,7 +632,7 @@ namespace Orts.Viewer3D.Popups
                             }
                         }
                     }
-                    else if (axle.Part.bogie) // this is a bogie
+                    else if (axle.Part.Bogie) // this is a bogie
                     {
                         if ( PreviousAxlePart)
                         {
@@ -648,7 +648,7 @@ namespace Orts.Viewer3D.Popups
                         currentCount += 2;
                     }
 
-                    if (axle.Part.bogie)
+                    if (axle.Part.Bogie)
                     {
                         PreviousAxlePart = true;
                     }
@@ -1084,6 +1084,7 @@ namespace Orts.Viewer3D.Popups
                 Viewer.Catalog.GetString("ErgRes"),
                 Viewer.Catalog.GetString("StrPipe"),
                 Viewer.Catalog.GetString("CtrlRes"),
+                Viewer.Catalog.GetString("SuppRes"),
                 Viewer.Catalog.GetString("RetValve"),
                 Viewer.Catalog.GetString("TripleValve"),
                 Viewer.Catalog.GetString(""),
@@ -1114,6 +1115,7 @@ namespace Orts.Viewer3D.Popups
                                 Viewer.Catalog.GetString("ErgRes"),
                                 Viewer.Catalog.GetString("MRPipe"),
                                 Viewer.Catalog.GetString("CtrlRes"),
+                                Viewer.Catalog.GetString("SuppRes"),
                                 Viewer.Catalog.GetString("RetValve"),
                                 Viewer.Catalog.GetString("TripleValve"),
                                 Viewer.Catalog.GetString(""),
@@ -1208,11 +1210,10 @@ namespace Orts.Viewer3D.Popups
 
                 TableAddLine(table);
 
-                TableAddLine(table, $"{Viewer.Catalog.GetString("Wind Speed:")} {Viewer.Catalog.GetStringFmt("{0:N2} mph", Me.ToMi(pS.TopH(train.PhysicsWindSpeedMpS)))}   " +
-                                    $"{Viewer.Catalog.GetString("Wind Direction:")} {Viewer.Catalog.GetStringFmt("{0:N2} Deg", train.PhysicsWindDirectionDeg)}   " +
-                                    $"{Viewer.Catalog.GetString("Train Direction:")} {Viewer.Catalog.GetStringFmt("{0:N2} Deg", train.PhysicsTrainLocoDirectionDeg)}   " +
-                                    $"{Viewer.Catalog.GetString("ResWind:")} {Viewer.Catalog.GetStringFmt("{0:N2} Deg", train.ResultantWindComponentDeg)}   " +
-                                    $"{Viewer.Catalog.GetString("ResSpeed:")} {Viewer.Catalog.GetStringFmt("{0:N2} mph", Me.ToMi(pS.TopH(train.WindResultantSpeedMpS)))}");
+                TableSetCells(table, 0, Viewer.Catalog.GetString("Wind"), string.Empty, FormatStrings.FormatSpeedDisplay(train.PhysicsWindSpeedMpS, mstsLocomotive.IsMetric), FormatStrings.FormatAngleDeg(train.PhysicsWindDirectionDeg));
+                TableSetCells(table, 4, Viewer.Catalog.GetString("Train"), FormatStrings.FormatAngleDeg(train.PhysicsTrainLocoDirectionDeg));
+                TableSetCells(table, 6, Viewer.Catalog.GetString("Result"), FormatStrings.FormatSpeedDisplay(train.WindResultantSpeedMpS, mstsLocomotive.IsMetric), FormatStrings.FormatAngleDeg(train.ResultantWindComponentDeg));
+                TableAddLine(table);
                 TableAddLine(table);
             }
 
@@ -1232,12 +1233,13 @@ namespace Orts.Viewer3D.Popups
                 Viewer.Catalog.GetString("Mass"),
                 Viewer.Catalog.GetString("Gradient"),
                 Viewer.Catalog.GetString("Curve"),
+                Viewer.Catalog.GetString("Superelev"),
                 Viewer.Catalog.GetString("Brk Frict."),
                 Viewer.Catalog.GetString("Brk Slide"),
                 Viewer.Catalog.GetString("Bear Temp"),
                 Viewer.Catalog.GetString(" "),
-                Viewer.Catalog.GetString("DerailCoeff")
-                
+                Viewer.Catalog.GetString("DerailCoeff"),
+                Viewer.Catalog.GetString(" ")
                 );
             TableAddLine(table);
 
@@ -1261,11 +1263,13 @@ namespace Orts.Viewer3D.Popups
                 TableSetCell(table, 12, "{0}", FormatStrings.FormatLargeMass(car.MassKG, car.IsMetric, car.IsUK));
                 TableSetCell(table, 13, "{0:F2}%", -car.CurrentElevationPercent);
                 TableSetCell(table, 14, "{0}", FormatStrings.FormatDistance(car.CurrentCurveRadiusM, car.IsMetric));
-                TableSetCell(table, 15, "{0:F0}%", car.HuDBrakeShoeFriction * 100.0f);
-                TableSetCell(table, 16, car.HUDBrakeSkid ? Viewer.Catalog.GetString("Yes") : Viewer.Catalog.GetString("No"));
-                TableSetCell(table, 17, "{0} {1}", FormatStrings.FormatTemperature(car.WheelBearingTemperatureDegC, car.IsMetric, false), car.DisplayWheelBearingTemperatureStatus);
-                TableSetCell(table, 18, car.Flipped ? Viewer.Catalog.GetString("Flipped") : "");
-                TableSetCell(table, 19, "{0:F2}{1}", car.DerailmentCoefficient, car.DerailExpected ? "!!!" : car.DerailPossible ? "???" : "");
+                TableSetCell(table, 15, "{0}", FormatStrings.FormatMillimeterDistanceDisplay(car.SuperElevationM, car.IsMetric));
+                TableSetCell(table, 16, "{0:F0}%", car.HuDBrakeShoeFriction * 100.0f);
+                TableSetCell(table, 17, car.HUDBrakeSkid ? Viewer.Catalog.GetString("Yes") : Viewer.Catalog.GetString("No"));
+                TableSetCell(table, 18, "{0} {1}", FormatStrings.FormatTemperature(car.WheelBearingTemperatureDegC, car.IsMetric, false), car.DisplayWheelBearingTemperatureStatus);
+                TableSetCell(table, 19, " ");
+                TableSetCell(table, 20, "{0:F2}{1}", car.DerailmentCoefficient, car.DerailExpected ? "!!!" : car.DerailPossible ? "???" : "");
+                TableSetCell(table, 21, car.Flipped ? Viewer.Catalog.GetString("Flipped") : "");
                 TableAddLine(table);
 
             }
@@ -1311,7 +1315,7 @@ namespace Orts.Viewer3D.Popups
                     || thisTrain.IsActualPlayerTrain)
                 {
                     var status = thisTrain.GetStatus(Viewer.MilepostUnitsMetric);
-                    if (thisTrain.TrainType == Train.TRAINTYPE.AI_PLAYERHOSTING) status = ((AITrain)thisTrain).AddMovementState(status, Viewer.MilepostUnitsMetric);
+                    if (thisTrain.TrainType == Train.TRAINTYPE.AI_PLAYERHOSTING || thisTrain.Autopilot) status = ((AITrain)thisTrain).AddMovementState(status, Viewer.MilepostUnitsMetric);
                     else if (thisTrain == Program.Simulator.OriginalPlayerTrain && Program.Simulator.Activity != null) status = thisTrain.AddRestartTime(status);
                     else if (thisTrain.IsActualPlayerTrain && Program.Simulator.Activity != null && thisTrain.ControlMode != Train.TRAIN_CONTROL.EXPLORER && !thisTrain.IsPathless)
                         status = thisTrain.AddRestartTime(status);
@@ -1325,7 +1329,7 @@ namespace Orts.Viewer3D.Popups
             foreach (var thisTrain in Viewer.Simulator.AI.AITrains)
             {
                 if (thisTrain.MovementState != AITrain.AI_MOVEMENT_STATE.AI_STATIC && thisTrain.TrainType != Train.TRAINTYPE.PLAYER
-                    && thisTrain.TrainType != Train.TRAINTYPE.AI_INCORPORATED)
+                    && thisTrain.TrainType != Train.TRAINTYPE.AI_INCORPORATED && !thisTrain.Autopilot)
                 {
                     if (thisTrain.Delay.HasValue && thisTrain.Delay.Value.TotalMinutes >= 1)
                     {
@@ -1342,7 +1346,7 @@ namespace Orts.Viewer3D.Popups
             foreach (var thisTrain in Viewer.Simulator.AI.AITrains)
             {
                 if (thisTrain.MovementState != AITrain.AI_MOVEMENT_STATE.AI_STATIC && thisTrain.TrainType != Train.TRAINTYPE.PLAYER
-                    && thisTrain.TrainType != Train.TRAINTYPE.AI_INCORPORATED)
+                    && thisTrain.TrainType != Train.TRAINTYPE.AI_INCORPORATED && !thisTrain.Autopilot)
                 {
                     if (!thisTrain.Delay.HasValue || thisTrain.Delay.Value.TotalMinutes < 1)
                     {
@@ -1428,11 +1432,12 @@ namespace Orts.Viewer3D.Popups
             TableSetLabelValueColumns(table, 0, 2);
             TextPageHeading(table, Viewer.Catalog.GetString("WEATHER INFORMATION"));
 
-            TableAddLabelValue(table, Viewer.Catalog.GetString("Visibility"), Viewer.Catalog.GetStringFmt("{0:N0} m", Viewer.Simulator.Weather.FogDistance));
-            TableAddLabelValue(table, Viewer.Catalog.GetString("Cloud cover"), Viewer.Catalog.GetStringFmt("{0:F0} %", Viewer.Simulator.Weather.OvercastFactor * 100));
-            TableAddLabelValue(table, Viewer.Catalog.GetString("Intensity"), Viewer.Catalog.GetStringFmt("{0:F4} p/s/m^2", Viewer.Simulator.Weather.PricipitationIntensityPPSPM2));
+            TableAddLabelValue(table, Viewer.Catalog.GetString("Visibility"), Viewer.Catalog.GetStringFmt("{0:N0} m", Viewer.Simulator.Weather.VisibilityM));
+            TableAddLabelValue(table, Viewer.Catalog.GetString("Cloud cover"), Viewer.Catalog.GetStringFmt("{0:F0} %", Viewer.Simulator.Weather.CloudCoverFactor * 100));
+            TableAddLabelValue(table, Viewer.Catalog.GetString("Intensity"), Viewer.Catalog.GetStringFmt("{0:F4} p/s/m^2", Viewer.Simulator.Weather.PrecipitationIntensityPPSPM2));
             TableAddLabelValue(table, Viewer.Catalog.GetString("Liquidity"), Viewer.Catalog.GetStringFmt("{0:F0} %", Viewer.Simulator.Weather.PrecipitationLiquidity * 100));
-            TableAddLabelValue(table, Viewer.Catalog.GetString("Wind"), Viewer.Catalog.GetStringFmt("{0:F1},{1:F1} m/s", Viewer.Simulator.Weather.WindSpeedMpS.X, Viewer.Simulator.Weather.WindSpeedMpS.Y));
+            TableAddLabelValue(table, Viewer.Catalog.GetString("Wind"), Viewer.Catalog.GetStringFmt("{0:F0} ° / {1:F1} m/s ({2:F0} ° / {3:F1} m/s gusts)", MathHelper.ToDegrees(Viewer.Simulator.Weather.WindAverageDirectionRad), Viewer.Simulator.Weather.WindAverageSpeedMpS, MathHelper.ToDegrees(Viewer.Simulator.Weather.WindInstantaneousDirectionRad), Viewer.Simulator.Weather.WindInstantaneousSpeedMpS));
+            // TODO: Move ambient temperature into Orts.Simulation.Weather
             TableAddLabelValue(table, Viewer.Catalog.GetString("Amb Temp"), FormatStrings.FormatTemperature(Viewer.PlayerLocomotive.CarOutsideTempC, Viewer.PlayerLocomotive.IsMetric, false));
         }
 

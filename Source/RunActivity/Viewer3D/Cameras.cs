@@ -778,7 +778,6 @@ namespace Orts.Viewer3D
         public bool tiltingLand;
         protected Vector3 attachedLocation;
         protected WorldPosition LookedAtPosition = new WorldPosition();
-
         protected AttachedCamera(Viewer viewer)
             : base(viewer)
         {
@@ -987,7 +986,8 @@ namespace Orts.Viewer3D
         public bool BrowseMode = false;
         protected float LowWagonOffsetLimit;
         protected float HighWagonOffsetLimit;
-
+        public int oldCarPosition;
+        public bool IsCameraFront;
         public override bool IsUnderground
         {
             get
@@ -1062,11 +1062,44 @@ namespace Orts.Viewer3D
         protected override void OnActivate(bool sameCamera)
         {
             BrowseMode = BrowseForwards = BrowseBackwards = false;
-            if (attachedCar == null || attachedCar.Train != Viewer.SelectedTrain)
+            var trainCars = GetCameraCars();
+            var TrainCarViewer = Viewer.TrainCarOperationsViewerWindow;
+            var carPosition = !(TrainCarViewer.CarPosition < trainCars.Count()) ? TrainCarViewer.CarPosition - 1 : TrainCarViewer.CarPosition;
+            var isDownCameraOutsideFront = UserInput.IsDown(UserCommand.CameraOutsideFront);
+            var isDownCameraOutsideRear = UserInput.IsDown(UserCommand.CameraOutsideRear);
+
+            bool isVisibleTrainCarViewerOrWebpage;
+            if (Viewer.TrainCarOperationsWebpage == null) 
+            {
+                // when starting Open Rails by means of a restore Viewer.TrainCarOperationsWebpage not yet available
+                isVisibleTrainCarViewerOrWebpage = Viewer.TrainCarOperationsViewerWindow.Visible;
+            }
+            else
+            {
+                isVisibleTrainCarViewerOrWebpage = Viewer.TrainCarOperationsViewerWindow.Visible || (Viewer.TrainCarOperationsWebpage.Connections > 0 && Viewer.TrainCarOperationsWebpage.TrainCarSelected);
+            }
+
+            if (attachedCar == null || attachedCar.Train != Viewer.SelectedTrain || carPosition != oldCarPosition)
             {
                 if (Front)
                 {
-                    SetCameraCar(GetCameraCars().First());
+                    if (!isVisibleTrainCarViewerOrWebpage && isDownCameraOutsideFront)
+                    {
+                        SetCameraCar(GetCameraCars().First());
+                        oldCarPosition = 0;
+                    }
+                    else if (isVisibleTrainCarViewerOrWebpage && carPosition >= 0)
+                    {
+                        if (carPosition < trainCars.Count)
+                        {
+                            // sometimes when decoupling cars the carPosition is out-of-range
+                            SetCameraCar(trainCars[carPosition]);
+                            oldCarPosition = carPosition;
+                        }
+                    }
+                    else
+                        SetCameraCar(GetCameraCars().First());
+
                     browsedTraveller = new Traveller(attachedCar.Train.FrontTDBTraveller);
                     ZDistanceM = -attachedCar.CarLengthM / 2;
                     HighWagonOffsetLimit = 0;
@@ -1074,8 +1107,19 @@ namespace Orts.Viewer3D
                 }
                 else
                 {
-                    var trainCars = GetCameraCars();
-                    SetCameraCar(trainCars.Last());
+                    if (!isVisibleTrainCarViewerOrWebpage && isDownCameraOutsideRear)
+                    {
+                        SetCameraCar(GetCameraCars().Last());
+                        oldCarPosition = 0;
+                    }
+                    else if (carPosition < trainCars.Count && isVisibleTrainCarViewerOrWebpage && carPosition >= 0)
+                    {
+                        SetCameraCar(trainCars[carPosition]);
+                        oldCarPosition = carPosition;
+                    }
+                    else
+                        SetCameraCar(trainCars.Last());
+
                     browsedTraveller = new Traveller(attachedCar.Train.RearTDBTraveller);
                     ZDistanceM = -attachedCar.Train.Length + (trainCars.First().CarLengthM + trainCars.Last().CarLengthM) * 0.5f + attachedCar.CarLengthM / 2;
                     LowWagonOffsetLimit = -attachedCar.Train.Length + trainCars.First().CarLengthM * 0.5f;
@@ -1240,6 +1284,9 @@ namespace Orts.Viewer3D
             else if (attachedCar != null)
             {
                 LookedAtPosition = new WorldPosition(attachedCar.WorldPosition);
+
+                // Cancel out unwanted effects on camera motion caused by vibration and superelevation
+                LookedAtPosition.XNAMatrix = attachedCar.SuperElevationInverseMatrix * attachedCar.VibrationInverseMatrix * LookedAtPosition.XNAMatrix;
             }
             UpdateLocation(LookedAtPosition);
             UpdateListener();
@@ -1373,7 +1420,6 @@ namespace Orts.Viewer3D
             // Todo travellers
         }
 
-
         public override void NextCar()
         {
             BrowseBackwards = false;
@@ -1468,7 +1514,7 @@ namespace Orts.Viewer3D
             BrowseBackwards = false;
         }
     }
-    
+
     public abstract class NonTrackingCamera : AttachedCamera
     {
         public NonTrackingCamera(Viewer viewer)
@@ -1556,7 +1602,6 @@ namespace Orts.Viewer3D
             base.LastCar();
             attachedToRear = true;
         }
-
     }
 
     public class InsideThreeDimCamera : NonTrackingCamera
@@ -2077,7 +2122,7 @@ namespace Orts.Viewer3D
             // Cab camera is only possible on the player locomotive.
             SetCameraCar(GetCameraCars().First());
             tiltingLand = false;
-            if (Viewer.Simulator.UseSuperElevation > 0 || Viewer.Simulator.CarVibrating > 0) tiltingLand = true;
+            if (Viewer.Simulator.UseSuperElevation || Viewer.Simulator.CarVibrating > 0) tiltingLand = true;
             var car = attachedCar;
             if (car != null && car.Train != null && car.Train.IsTilting == true) tiltingLand = true;
             base.OnActivate(sameCamera);
@@ -2612,9 +2657,9 @@ namespace Orts.Viewer3D
                                     LastCheckCar = FirstUpdateLoop ^ trainForwards ? train.Cars.First() : train.Cars.Last();
                                     shortTrav.Move(distanceToViewingPoint1);
                                     // moving newLocation to platform at side of track
-                                    newLocation.Location.X += (PlatformOffsetM + Viewer.Simulator.SuperElevationGauge / 2) * (float)Math.Cos(shortTrav.RotY) *
+                                    newLocation.Location.X += (PlatformOffsetM + Viewer.Simulator.RouteTrackGaugeM / 2) * (float)Math.Cos(shortTrav.RotY) *
                                         (thisPlatform.PlatformSide[1] ? 1 : -1);
-                                    newLocation.Location.Z += -(PlatformOffsetM + Viewer.Simulator.SuperElevationGauge / 2) * (float)Math.Sin(shortTrav.RotY) *
+                                    newLocation.Location.Z += -(PlatformOffsetM + Viewer.Simulator.RouteTrackGaugeM / 2) * (float)Math.Sin(shortTrav.RotY) *
                                         (thisPlatform.PlatformSide[1] ? 1 : -1);
                                     TrackCameraLocation = new WorldLocation(newLocation);
                                     break;

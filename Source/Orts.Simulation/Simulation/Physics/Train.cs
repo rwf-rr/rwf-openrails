@@ -315,6 +315,7 @@ namespace Orts.Simulation.Physics
             }
         }
 
+        public bool Autopilot;                              // true if autopiloted
         public bool IsPlayable = false;
         public bool IsPathless = false;
 
@@ -574,7 +575,7 @@ namespace Orts.Simulation.Physics
         {
             Init(simulator);
 
-            if (Simulator.IsAutopilotMode && TotalNumber == 1 && Simulator.TrainDictionary.Count == 0) TotalNumber = 0; //The autopiloted train has number 0
+            if (Simulator.IsAutopilotMode && TotalNumber == 1 && Simulator.TrainDictionary.Count == 0 && !Simulator.TimetableMode) TotalNumber = 0; //The autopiloted train has number 0
             Number = TotalNumber;
             TotalNumber++;
             SignalObjectItems = new List<ObjectItemInfo>();
@@ -611,7 +612,7 @@ namespace Orts.Simulation.Physics
         {
             Init(simulator);
             Number = TotalNumber;
-            Name = String.Concat(String.Copy(orgTrain.Name), TotalNumber.ToString());
+            Name = String.Concat(orgTrain.Name, TotalNumber.ToString());
             TotalNumber++;
             SignalObjectItems = new List<ObjectItemInfo>();
             signalRef = simulator.Signals;
@@ -893,6 +894,7 @@ namespace Orts.Simulation.Physics
                 PreviousPosition[0] = new TCPosition();
                 PreviousPosition[0].RestorePreviousPositionDummy(inf);
             }
+            Autopilot = inf.ReadBoolean();
             travelled = DistanceTravelledM;
             int activeActions = inf.ReadInt32();
             for (int iAction = 0; iAction < activeActions; iAction++)
@@ -1200,6 +1202,7 @@ namespace Orts.Simulation.Physics
             PresentPosition[0].Save(outf);
             PresentPosition[1].Save(outf);
             PreviousPosition[0].Save(outf);
+            outf.Write(Autopilot);
             //  Save requiredAction, the original actions
             outf.Write(requiredActions.Count);
             foreach (DistanceTravelledItem thisAction in requiredActions)
@@ -1291,9 +1294,6 @@ namespace Orts.Simulation.Physics
             // negative numbers used if rear cab selected
             // because '0' has no negative, all indices are shifted by 1!!!!
 
-            int presentIndex = LeadLocomotiveIndex + 1;
-            if (((MSTSLocomotive)LeadLocomotive).UsingRearCab) presentIndex = -presentIndex;
-
             List<int> cabList = new List<int>();
 
             for (int i = 0; i < Cars.Count; i++)
@@ -1312,7 +1312,12 @@ namespace Orts.Simulation.Physics
                     if (hasFrontCab) cabList.Add(i + 1);
                     if (hasRearCab) cabList.Add(-(i + 1));
                 }
+                if (LeadLocomotiveIndex == -1 && Simulator.PlayerLocomotive == Cars[i])
+                    LeadLocomotiveIndex = i;
             }
+
+            int presentIndex = LeadLocomotiveIndex + 1;
+            if (((MSTSLocomotive)LeadLocomotive).UsingRearCab) presentIndex = -presentIndex;
 
             int lastIndex = cabList.IndexOf(presentIndex);
             if (lastIndex >= cabList.Count - 1) lastIndex = -1;
@@ -1339,6 +1344,8 @@ namespace Orts.Simulation.Physics
             if (Simulator.PlayerLocomotive != null && Simulator.PlayerLocomotive.Train == this)
 
                 Simulator.PlayerLocomotive = newLead;
+            if (Autopilot || TrainType == TRAINTYPE.AI_PLAYERHOSTING)
+                LeadLocomotiveIndex = -1;
 
             return newLead;
         }
@@ -1853,7 +1860,11 @@ namespace Orts.Simulation.Physics
             {
                 MSTSLocomotive lead = (MSTSLocomotive)Cars[LeadLocomotiveIndex];
                 if (lead is MSTSSteamLocomotive) MUReverserPercent = 25;
-                lead.CurrentElevationPercent = 100f * lead.WorldPosition.XNAMatrix.M32;
+
+                // Percent slope = rise / run -> the Y position of the forward vector gives us the 'rise'
+                // Derive the 'run' by assuming a hypotenuse length of 1, so run = sqrt(1 - rise^2)
+                float rise = lead.WorldPosition.XNAMatrix.M32;
+                lead.CurrentElevationPercent = 100f * (rise / (float)Math.Sqrt(1 - rise * rise));
 
                 //TODO: next if block has been inserted to flip trainset physics in order to get viewing direction coincident with loco direction when using rear cab.
                 // To achieve the same result with other means, without flipping trainset physics, the block should be deleted
@@ -2198,42 +2209,41 @@ namespace Orts.Simulation.Physics
         public void UpdateWindComponents()
         {
             // Gets wind direction and speed, and determines HUD display values for the train as a whole. 
-            //These will be representative of the train whilst it is on a straight track, but each wagon will vary when going around a curve.
+            // These will be representative of the train whilst it is on a straight track, but each wagon will vary when going around a curve.
             // Note both train and wind direction will be positive between 0 (north) and 180 (south) through east, and negative between 0 (north) and 180 (south) through west
             // Wind and train direction to be converted to an angle between 0 and 360 deg.
-                // Calculate Wind speed and direction, and train direction
-                // Update the value of the Wind Speed and Direction for the train
-                PhysicsWindDirectionDeg = MathHelper.ToDegrees(Simulator.Weather.WindDirection);
-                PhysicsWindSpeedMpS = Simulator.Weather.WindSpeed;
-                float TrainSpeedMpS = Math.Abs(SpeedMpS);
+            // Calculate Wind speed and direction, and train direction
+            // Update the value of the Wind Speed and Direction for the train
+            PhysicsWindDirectionDeg = MathHelper.ToDegrees(Simulator.Weather.WindInstantaneousDirectionRad);
+            PhysicsWindSpeedMpS = Simulator.Weather.WindInstantaneousSpeedMpS;
+            var speedMpS = Math.Abs(SpeedMpS);
 
-                // If a westerly direction (ie -ve) convert to an angle between 0 and 360
-                if (PhysicsWindDirectionDeg < 0)
-                    PhysicsWindDirectionDeg += 360;
+            // If a westerly direction (ie -ve) convert to an angle between 0 and 360
+            if (PhysicsWindDirectionDeg < 0)
+                PhysicsWindDirectionDeg += 360;
 
-                if (PhysicsTrainLocoDirectionDeg < 0)
-                    PhysicsTrainLocoDirectionDeg += 360;
+            if (PhysicsTrainLocoDirectionDeg < 0)
+                PhysicsTrainLocoDirectionDeg += 360;
 
-                // calculate angle between train and eind direction
-                if (PhysicsWindDirectionDeg > PhysicsTrainLocoDirectionDeg)
-                    ResultantWindComponentDeg = PhysicsWindDirectionDeg - PhysicsTrainLocoDirectionDeg;
-                else if (PhysicsTrainLocoDirectionDeg > PhysicsWindDirectionDeg)
-                    ResultantWindComponentDeg = PhysicsTrainLocoDirectionDeg - PhysicsWindDirectionDeg;
-                else
-                    ResultantWindComponentDeg = 0.0f;
+            // Calculate angle between train and wind direction
+            if (PhysicsWindDirectionDeg > PhysicsTrainLocoDirectionDeg)
+                ResultantWindComponentDeg = PhysicsWindDirectionDeg - PhysicsTrainLocoDirectionDeg;
+            else if (PhysicsTrainLocoDirectionDeg > PhysicsWindDirectionDeg)
+                ResultantWindComponentDeg = PhysicsTrainLocoDirectionDeg - PhysicsWindDirectionDeg;
+            else
+                ResultantWindComponentDeg = 0.0f;
 
-                // Correct wind direction if it is greater then 360 deg, then correct to a value less then 360
-                if (Math.Abs(ResultantWindComponentDeg) > 360)
-                    ResultantWindComponentDeg = ResultantWindComponentDeg - 360.0f;
+            // Correct wind direction if it is greater then 360 deg, then correct to a value less then 360
+            if (Math.Abs(ResultantWindComponentDeg) > 360)
+                ResultantWindComponentDeg = ResultantWindComponentDeg - 360.0f;
 
-                // Wind angle should be kept between 0 and 180 the formulas do not cope with angles > 180. If angle > 180, denotes wind of "other" side of train
-                if (ResultantWindComponentDeg > 180)
-                    ResultantWindComponentDeg = 360 - ResultantWindComponentDeg;
+            // Wind angle should be kept between 0 and 180 the formulas do not cope with angles > 180. If angle > 180, denotes wind of "other" side of train
+            if (ResultantWindComponentDeg > 180)
+                ResultantWindComponentDeg = 360 - ResultantWindComponentDeg;
 
-                float WindAngleRad = MathHelper.ToRadians(ResultantWindComponentDeg);
-
-                WindResultantSpeedMpS = (float)Math.Sqrt(TrainSpeedMpS * TrainSpeedMpS + PhysicsWindSpeedMpS * PhysicsWindSpeedMpS + 2.0f * TrainSpeedMpS * PhysicsWindSpeedMpS * (float)Math.Cos(WindAngleRad));
-            }
+            var windAngleRad = MathHelper.ToRadians(ResultantWindComponentDeg);
+            WindResultantSpeedMpS = (float)Math.Sqrt(speedMpS * speedMpS + PhysicsWindSpeedMpS * PhysicsWindSpeedMpS + 2.0f * speedMpS * PhysicsWindSpeedMpS * (float)Math.Cos(windAngleRad));
+        }
 
 
         //================================================================================================//
@@ -4117,7 +4127,7 @@ namespace Orts.Simulation.Physics
                     if (MUDynamicBrakePercent == 0)
                         MUDynamicBrakePercent = -1;
                 }
-                BrakeLine2PressurePSI = lead.MaximumMainReservoirPipePressurePSI;
+                BrakeLine2PressurePSI = lead.MainResPressurePSI;
                 ConnectBrakeHoses();
             }
             else
@@ -4156,6 +4166,7 @@ namespace Orts.Simulation.Physics
             for (var i = 0; i < Cars.Count; i++)
             {
                 Cars[i].BrakeSystem.FrontBrakeHoseConnected = i > 0;
+                Cars[i].BrakeSystem.RearBrakeHoseConnected = i < Cars.Count - 1;
                 Cars[i].BrakeSystem.AngleCockAOpen = i > 0;
                 Cars[i].BrakeSystem.AngleCockBOpen = i < Cars.Count - 1;
                 // If end of train is not reached yet, then test the attached following car. If it is a manual braked car then set the brake cock on this car to closed.
@@ -4490,41 +4501,25 @@ namespace Orts.Simulation.Physics
                 }
                 else
                 {
-                    var bogieSpacing = car.CarLengthM * 0.65f;  // we'll use this approximation since the wagfile doesn't contain info on bogie position
-
                     // traveller is positioned at the front of the car
                     // advance to the first bogie 
-                    traveller.Move((car.CarLengthM - bogieSpacing) / 2.0f);
+                    traveller.Move((car.CarLengthM - car.CarBogieCentreLengthM) / 2.0f);
                     var tileX = traveller.TileX;
                     var tileZ = traveller.TileZ;
                     var x = traveller.X;
                     var y = traveller.Y;
                     var z = traveller.Z;
-                    traveller.Move(bogieSpacing);
 
-                    // normalize across tile boundaries
-                    while (tileX > traveller.TileX)
-                    {
-                        x += 2048;
-                        --tileX;
-                    }
-                    while (tileX < traveller.TileX)
-                    {
-                        x -= 2048;
-                        ++tileX;
-                    }
-                    while (tileZ > traveller.TileZ)
-                    {
-                        z += 2048;
-                        --tileZ;
-                    }
-                    while (tileZ < traveller.TileZ)
-                    {
-                        z -= 2048;
-                        ++tileZ;
-                    }
+                    // Update car's curve radius and superelevation based on bogie position and move traveller to front bogie
+                    // Also determine roll angle for superelevation by averaging both bogies
+                    float roll = traveller.GetVisualElevation();
+                    car.UpdateCurvePhys(traveller, new[] { 0, car.CarBogieCentreLengthM });
+                    roll = (roll + traveller.GetVisualElevation()) / 2.0f;
 
-                    // note the railcar sits 0.275meters above the track database path  TODO - is this always consistent?
+                    // Normalize across tile boundaries
+                    x += 2048 * (tileX - traveller.TileX);
+                    z += 2048 * (tileZ - traveller.TileZ);
+
                     car.WorldPosition.XNAMatrix = Matrix.Identity;
                     if (!car.Flipped)
                     {
@@ -4532,11 +4527,25 @@ namespace Orts.Simulation.Physics
                         car.WorldPosition.XNAMatrix.M11 = -1;
                         car.WorldPosition.XNAMatrix.M33 = -1;
                     }
-                    car.WorldPosition.XNAMatrix *= Simulator.XNAMatrixFromMSTSCoordinates(traveller.X, traveller.Y + 0.275f, traveller.Z, x, y + 0.275f, z);
+
+                    // Position car based on position of the front and rear of the car
+                    car.WorldPosition.XNAMatrix *= Simulator.XNAMatrixFromMSTSCoordinates(traveller.X, traveller.Y, traveller.Z, x, y, z);
+
+                    // Update gravity force when position is updated, but before any secondary motion is added
+                    Vector3 fwd = car.WorldPosition.XNAMatrix.Backward;
+                    car.GravityForceN = car.MassKG * TrainCar.GravitationalAccelerationMpS2 * fwd.Y;
+                    car.CurrentElevationPercent = 100f * (fwd.Y / (float)Math.Sqrt(1 - fwd.Y * fwd.Y));
+
+                    // Apply superelevation to car
+                    car.WorldPosition.XNAMatrix = Matrix.CreateRotationZ((car.Flipped ? -1.0f : 1.0f) * roll) * car.WorldPosition.XNAMatrix;
+
+                    // note the railcar sits 0.275meters above the track database path  TODO - is this always consistent?
+                    car.WorldPosition.XNAMatrix.Translation += car.WorldPosition.XNAMatrix.Up * 0.275f;
+
                     car.WorldPosition.TileX = traveller.TileX;
                     car.WorldPosition.TileZ = traveller.TileZ;
 
-                    traveller.Move((car.CarLengthM - bogieSpacing) / 2.0f);
+                    traveller.Move((car.CarLengthM - car.CarBogieCentreLengthM) / 2.0f);  // Move to the front of the car 
                 }
                 if (i < Cars.Count - 1)
                 {
@@ -4613,42 +4622,25 @@ namespace Orts.Simulation.Physics
                 }
                 else
                 {
-                    var bogieSpacing = car.CarLengthM * 0.65f;  // we'll use this approximation since the wagfile doesn't contain info on bogie position
-
                     // traveller is positioned at the back of the car
                     // advance to the first bogie 
-                    traveller.Move((car.CarLengthM - bogieSpacing) / 2.0f);
+                    traveller.Move((car.CarLengthM - car.CarBogieCentreLengthM) / 2.0f);
                     var tileX = traveller.TileX;
                     var tileZ = traveller.TileZ;
                     var x = traveller.X;
                     var y = traveller.Y;
                     var z = traveller.Z;
-                    traveller.Move(bogieSpacing);
 
-                    // normalize across tile boundaries
-                    while (tileX > traveller.TileX)
-                    {
-                        x += 2048;
-                        --tileX;
-                    }
-                    while (tileX < traveller.TileX)
-                    {
-                        x -= 2048;
-                        ++tileX;
-                    }
-                    while (tileZ > traveller.TileZ)
-                    {
-                        z += 2048;
-                        --tileZ;
-                    }
-                    while (tileZ < traveller.TileZ)
-                    {
-                        z -= 2048;
-                        ++tileZ;
-                    }
+                    // Update car's curve radius and superelevation based on bogie position and move traveller to front bogie
+                    // Outputs rotation angle for superelevation, used below
+                    float roll = traveller.GetVisualElevation();
+                    car.UpdateCurvePhys(traveller, new[] { 0, car.CarBogieCentreLengthM });
+                    roll = (roll + traveller.GetVisualElevation()) / 2.0f;
 
+                    // Normalize across tile boundaries
+                    x += 2048 * (tileX - traveller.TileX);
+                    z += 2048 * (tileZ - traveller.TileZ);
 
-                    // note the railcar sits 0.275meters above the track database path  TODO - is this always consistent?
                     car.WorldPosition.XNAMatrix = Matrix.Identity;
                     if (car.Flipped)
                     {
@@ -4656,13 +4648,27 @@ namespace Orts.Simulation.Physics
                         car.WorldPosition.XNAMatrix.M11 = -1;
                         car.WorldPosition.XNAMatrix.M33 = -1;
                     }
-                    car.WorldPosition.XNAMatrix *= Simulator.XNAMatrixFromMSTSCoordinates(traveller.X, traveller.Y + 0.275f, traveller.Z, x, y + 0.275f, z);
+
+                    // Position car based on position of the front and rear of the car
+                    car.WorldPosition.XNAMatrix *= Simulator.XNAMatrixFromMSTSCoordinates(traveller.X, traveller.Y, traveller.Z, x, y, z);
+
+                    // Update gravity force when position is updated, but before any secondary motion is added
+                    Vector3 fwd = car.WorldPosition.XNAMatrix.Backward;
+                    car.GravityForceN = car.MassKG * TrainCar.GravitationalAccelerationMpS2 * fwd.Y;
+                    car.CurrentElevationPercent = 100f * (fwd.Y / (float)Math.Sqrt(1 - fwd.Y * fwd.Y));
+
+                    // Apply superelevation to car
+                    car.WorldPosition.XNAMatrix = Matrix.CreateRotationZ((car.Flipped ? -1.0f : 1.0f) * roll) * car.WorldPosition.XNAMatrix;
+
+                    // note the railcar sits 0.275meters above the track database path  TODO - is this always consistent?
+                    car.WorldPosition.XNAMatrix.Translation += car.WorldPosition.XNAMatrix.Up * 0.275f;
+
                     car.WorldPosition.TileX = traveller.TileX;
                     car.WorldPosition.TileZ = traveller.TileZ;
 
-                    traveller.Move((car.CarLengthM - bogieSpacing) / 2.0f);  // Move to the front of the car 
+                    traveller.Move((car.CarLengthM - car.CarBogieCentreLengthM) / 2.0f);  // Move to the front of the car 
 
-                    car.UpdatedTraveler(traveller, elapsedTime, distance, SpeedMpS);
+                    car.UpdateVibration(traveller, elapsedTime, distance);
                 }
                 length += car.CarLengthM;
                 // update position of container in discrete freight animations
@@ -4697,42 +4703,25 @@ namespace Orts.Simulation.Physics
             }
             else
             {
-                var bogieSpacing = car.CarLengthM * 0.65f;  // we'll use this approximation since the wagfile doesn't contain info on bogie position
-
                 // traveller is positioned at the back of the car
                 // advance to the first bogie 
-                traveller.Move((car.CarLengthM - bogieSpacing) / 2.0f);
+                traveller.Move((car.CarLengthM - car.CarBogieCentreLengthM) / 2.0f);
                 var tileX = traveller.TileX;
                 var tileZ = traveller.TileZ;
                 var x = traveller.X;
                 var y = traveller.Y;
                 var z = traveller.Z;
-                traveller.Move(bogieSpacing);
 
-                // normalize across tile boundaries
-                while (tileX > traveller.TileX)
-                {
-                    x += 2048;
-                    --tileX;
-                }
-                while (tileX < traveller.TileX)
-                {
-                    x -= 2048;
-                    ++tileX;
-                }
-                while (tileZ > traveller.TileZ)
-                {
-                    z += 2048;
-                    --tileZ;
-                }
-                while (tileZ < traveller.TileZ)
-                {
-                    z -= 2048;
-                    ++tileZ;
-                }
+                // Update car's curve radius and superelevation based on bogie position and move traveller to front bogie
+                // Outputs rotation angle for superelevation, used below
+                float roll = traveller.GetVisualElevation();
+                car.UpdateCurvePhys(traveller, new[] { 0, car.CarBogieCentreLengthM });
+                roll = (roll + traveller.GetVisualElevation()) / 2.0f;
 
+                // Normalize across tile boundaries
+                x += 2048 * (tileX - traveller.TileX);
+                z += 2048 * (tileZ - traveller.TileZ);
 
-                // note the railcar sits 0.275meters above the track database path  TODO - is this always consistent?
                 car.WorldPosition.XNAMatrix = Matrix.Identity;
                 if (car.Flipped)
                 {
@@ -4740,13 +4729,27 @@ namespace Orts.Simulation.Physics
                     car.WorldPosition.XNAMatrix.M11 = -1;
                     car.WorldPosition.XNAMatrix.M33 = -1;
                 }
-                car.WorldPosition.XNAMatrix *= Simulator.XNAMatrixFromMSTSCoordinates(traveller.X, traveller.Y + 0.275f, traveller.Z, x, y + 0.275f, z);
+
+                // Position car based on position of the front and rear of the car
+                car.WorldPosition.XNAMatrix *= Simulator.XNAMatrixFromMSTSCoordinates(traveller.X, traveller.Y, traveller.Z, x, y, z);
+
+                // Update gravity force when position is updated, but before any secondary motion is added
+                Vector3 fwd = car.WorldPosition.XNAMatrix.Backward;
+                car.GravityForceN = car.MassKG * TrainCar.GravitationalAccelerationMpS2 * fwd.Y;
+                car.CurrentElevationPercent = 100f * (fwd.Y / (float)Math.Sqrt(1 - fwd.Y * fwd.Y));
+
+                // Apply superelevation to car
+                car.WorldPosition.XNAMatrix = Matrix.CreateRotationZ((car.Flipped ? -1.0f : 1.0f) * roll) * car.WorldPosition.XNAMatrix;
+
+                // note the railcar sits 0.275meters above the track database path  TODO - is this always consistent?
+                car.WorldPosition.XNAMatrix.Translation += car.WorldPosition.XNAMatrix.Up * 0.275f;
+
                 car.WorldPosition.TileX = traveller.TileX;
                 car.WorldPosition.TileZ = traveller.TileZ;
 
-                traveller.Move((car.CarLengthM - bogieSpacing) / 2.0f);  // Move to the front of the car 
+                traveller.Move((car.CarLengthM - car.CarBogieCentreLengthM) / 2.0f);  // Move to the front of the car 
 
-                car.UpdatedTraveler(traveller, elapsedTime, distance, SpeedMpS);
+                car.UpdateVibration(traveller, elapsedTime, distance);
                 length += car.CarLengthM;
             }
             traveller = new Traveller(traveller, Traveller.TravellerDirection.Backward);
@@ -4782,7 +4785,7 @@ namespace Orts.Simulation.Physics
                 // advance to the front of the car 
                 traveller.Move(car.CarLengthM);
 
-                car.UpdatedTraveler(traveller, elapsedTime, distance, SpeedMpS);
+                car.UpdateVibration(traveller, elapsedTime, distance);
                 length += car.CarLengthM;
             }
             RearTDBTraveller = new Traveller(traveller);
@@ -10373,7 +10376,7 @@ namespace Orts.Simulation.Physics
 
         public void RequestToggleManualMode()
         {
-            if (TrainType == TRAINTYPE.AI_PLAYERHOSTING)
+            if (TrainType == TRAINTYPE.AI_PLAYERHOSTING || Autopilot)
             {
                 if (Simulator.Confirmer != null) // As Confirmer may not be created until after a restore.
                     Simulator.Confirmer.Message(ConfirmLevel.Warning, Simulator.Catalog.GetString("You cannot enter manual mode when autopiloted"));
@@ -14407,7 +14410,7 @@ namespace Orts.Simulation.Physics
                 circuitString = String.Concat(circuitString, forwardstring);
             }
 
-            statusString[iColumn] = String.Copy(circuitString);
+            statusString[iColumn] = circuitString;
 
             return (statusString);
         }
@@ -14443,7 +14446,7 @@ namespace Orts.Simulation.Physics
         public string BuildSectionString(string thisString, TrackCircuitSection thisSection, int direction)
         {
 
-            string returnString = String.Copy(thisString);
+            string returnString = thisString;
 
             switch (thisSection.CircuitType)
             {
@@ -14604,8 +14607,8 @@ namespace Orts.Simulation.Physics
                 DateTime depTime = baseDT.AddSeconds((AuxActionsContain.SpecAuxActions[0] as AIActionWPRef).keepIt.ActualDepart);
                 abString = depTime.ToString("HH:mm:ss");
             }
-            retString[4] = String.Copy(movString);
-            retString[5] = String.Copy(abString);
+            retString[4] = movString;
+            retString[5] = abString;
 
             return (retString);
         }
@@ -18327,7 +18330,7 @@ namespace Orts.Simulation.Physics
                     {
                         TCSubpathRoute inversePassPath = passPath.ReversePath(orgSignals);
                         int[] inverseIndex =
-                            thisDeadlock.AddPath(inversePassPath, endSectionIndex, String.Copy(thisDeadlockPathInfo.Name), String.Empty);
+                            thisDeadlock.AddPath(inversePassPath, endSectionIndex, thisDeadlockPathInfo.Name, String.Empty);
                         DeadlockPathInfo thisDeadlockInverseInfo = thisDeadlock.AvailablePathList[inverseIndex[0]];
 
                         Dictionary<int, float> altInversePathUsefullInfo = inversePassPath.GetUsefullLength(0.0f, orgSignals, -1, -1);
@@ -21201,7 +21204,7 @@ namespace Orts.Simulation.Physics
                 if (passengerCarsWithinPlatform > 0)
                 {
                     var actualNumPassengersWaiting = PlatformItem.NumPassengersWaiting;
-                    if (stopTrain.TrainType != TRAINTYPE.AI_PLAYERHOSTING) RandomizePassengersWaiting(ref actualNumPassengersWaiting, stopTrain);
+                    if (stopTrain.TrainType != TRAINTYPE.AI_PLAYERHOSTING && !stopTrain.Autopilot) RandomizePassengersWaiting(ref actualNumPassengersWaiting, stopTrain);
                     stopTime = Math.Max(NumSecPerPass * actualNumPassengersWaiting / passengerCarsWithinPlatform, DefaultFreightStopTime);
                 }
                 else stopTime = 0; // no passenger car stopped within platform: sorry, no countdown starts
