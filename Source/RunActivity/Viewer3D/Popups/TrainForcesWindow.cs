@@ -298,9 +298,9 @@ namespace Orts.Viewer3D.Popups
 
             if (absForceN > 1000f && CouplerStrengthScaleN > 1000f)  // exclude improbabl values
             {
-                // power scale, to be sensitve at limit:  1k lbf, 32%, 50%, 63%, 73%, 82%, 89%, 95%, 100%
+                // power scale, to be sensitve at limit:  1k lbf, 28%, 46%, 59%, 70%, 80%, 87%, 94%, 100%
                 var relForce = absForceN / CouplerStrengthScaleN;
-                var expForce = Math.Pow(9, relForce);
+                var expForce = (Math.Pow(6, relForce) - 1) * 1.5 + 1;
                 idx = (int)Math.Floor(expForce);
                 idx = (car.SmoothedCouplerForceUN > 0f) ? idx * -1 + 9 : idx + 9; // positive force is push
                 if (idx < 0) { idx = 0; } else if (idx > 18) { idx = 18; }
@@ -352,7 +352,6 @@ namespace Orts.Viewer3D.Popups
             {
                 // flatter scale due to discrete curve radus: 1k lbf, 21%, 37%, 51%, 64%, 74%, 84%, 93%, 100%
                 var relForce = absForceN / DerailForceScaleN;
-                // var expForce = Math.Pow(9, relForce);
                 var expForce = (Math.Pow(3, relForce) - 1) * 4 + 1;
                 idx = (int)Math.Floor(expForce);
                 idx = (car.CouplerForceU > 0f && car.CouplerSlackM < 0) ? idx * -1 + 9 : idx + 9; // positive force is push
