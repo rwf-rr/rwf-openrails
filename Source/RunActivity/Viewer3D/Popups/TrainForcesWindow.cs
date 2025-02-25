@@ -21,7 +21,7 @@
 // This is a prototype to evaluate a train forces popup display. The
 // intent is to provide real-time train-handling feeback of the forces
 // within the train, particularly for long, heavy freight trains. The
-// Forces HUD, display or browser, is hard to read.
+// Forces HUD, display or browser, is hard to read for long trains.
 // An alternative, better in the long-term, might be an external window
 // that provides both in-train and over time feedback, as seen on
 // professional train simulators. See the discussion in the Elvas tower
@@ -38,7 +38,9 @@
 //   Shows the sideway push or pull at the wheels as a colored bar graph. Up (positive) is
 //   pull to the inside (stringline), down (negative) is push to the outside (jackknife).
 //   The scale is determined by the lowest axle-load (vertical force). The steps  are
-//   non-linear, to provide more sensitivity near the derailing point.
+//   non-linear, to provide more sensitivity near the derailing point. But this is less
+//   effective for lateral forces, as the force is proporation to the curve radius, which
+//   changes in discrete steps.
 //
 // Bar Graph for Force:
 //   +/- 9 bars; 4 green, 3 orange, 2 red
@@ -56,13 +58,13 @@
 //   are not included.
 //
 // Notes:
-//   * Design was copied from the old (horizontal) train operations window.
+//   * Design was copied from the old (horizontal) train operations window. Using text-hight
+//     for field-width, as text width is variable.
 //   * The derail coefficient was considered, but the lateral force provides a more uniform
 //     view across the train.
-//   * Using text-hight for field-width, as text width is variable.
 //   * Lateral Forces and Derailment:
 //     - As of Feb 2025, lateral forces are not calculated on straight track.
-//     - As of Feb 2025, longitudinal buff forces may also cause coupler breaks.
+//     - As of Feb 2025, high longitudinal buff forces cause coupler breaks, not derailment.
 #endregion
 
 using Microsoft.Xna.Framework;
@@ -72,9 +74,6 @@ using Orts.Simulation.RollingStocks;
 using ORTS.Common;
 using System.Diagnostics;
 using System;
-using System.Collections.Generic;
-using System.Xml;
-using SharpDX.Direct2D1.Effects;
 
 namespace Orts.Viewer3D.Popups
 {
@@ -87,10 +86,6 @@ namespace Orts.Viewer3D.Popups
         const int BarGraphHight = 40;
         const int HalfBarGraphHight = 20;
         const int BarWidth = 6;
-
-        float SimSeconds = 0f;
-        float LastLogSeconds = 0f;
-        int PrepareCalls = 0;
 
         Train PlayerTrain;
         int LastPlayerTrainCars;
@@ -108,17 +103,30 @@ namespace Orts.Viewer3D.Popups
         Label MaxLongForceForTextBox;
         Label MaxLatForceForTextBox;
 
-        float LastAbsForceN = 0f;
-        float NextLowerTime = 0f;
+        // window size
+        readonly int TextHight;
+        readonly int GraphLabelWidth;
+        readonly int TextLineWidth;
+        readonly int WindowHeight;
+        readonly int WindowWidthMin;
+        readonly int WindowWidthMax;
+
 
         /// <summary>
-        /// Constructor. Window is wide enough for about 150 cars. Longer trains
-        /// have a scrollbar. This seems a reasonable compromise between typical
-        /// display size and typical train length.
+        /// Constructor. Initial window is wide enough for the two current forces in the
+        /// line. This is good for about 50 cars. Window will resize when the number of
+        /// cars is greater, and will scroll when the window would have to be greater
+        /// than 1000 pixels.
         /// </summary>
         public TrainForcesWindow(WindowManager owner)
-            : base(owner, Window.DecorationSize.X + 1000, Window.DecorationSize.Y + owner.TextFontDefault.Height * 2 + BarGraphHight * 2 + 20, Viewer.Catalog.GetString("Train Forces"))
+            : base(owner, Window.DecorationSize.X + 500, Window.DecorationSize.Y + owner.TextFontDefault.Height * 2 + BarGraphHight * 2 + 18, Viewer.Catalog.GetString("Train Forces"))
         {
+            TextHight = owner.TextFontDefault.Height;
+            GraphLabelWidth = TextHight * 6;
+            TextLineWidth = TextHight * (9 + 7 + 9 + 7 + 8 + 5 + 8 + 5) + 2;
+            WindowHeight = Location.Height;
+            WindowWidthMin = Location.Width;
+            WindowWidthMax = 1024 - Window.DecorationSize.X;
         }
 
         /// <summary>
@@ -138,19 +146,20 @@ namespace Orts.Viewer3D.Popups
         /// </summary>
         protected override ControlLayout Layout(ControlLayout layout)
         {
-            var textHeight = Owner.TextFontDefault.Height;
-            var labelWidth = textHeight * 6;
-            int numBars = 60;  // enough to show the important part of the text line
-            if (PlayerTrain != null && PlayerTrain.Cars != null && PlayerTrain.Cars.Count > numBars) { numBars = PlayerTrain.Cars.Count; }
-            var innerBoxWidth = labelWidth + BarWidth * numBars + 4;
+            var innerBoxWidth = TextLineWidth;
+            if (PlayerTrain != null && PlayerTrain.Cars != null)
+            {
+                int barGraphWidth = GraphLabelWidth + BarWidth * PlayerTrain.Cars.Count + 4;
+                if (barGraphWidth > innerBoxWidth) { innerBoxWidth = barGraphWidth; }
+            }
 
             var hbox = base.Layout(layout).AddLayoutHorizontal();
             var scrollbox = hbox.AddLayoutScrollboxHorizontal(hbox.RemainingHeight);
             var vbox = scrollbox.AddLayoutVertical(Math.Max(innerBoxWidth,scrollbox.RemainingWidth));
             var longForceBox = vbox.AddLayoutHorizontal(BarGraphHight + 4);
-            longForceBox.Add(new Label(0, (BarGraphHight - textHeight) / 2, labelWidth, BarGraphHight, Viewer.Catalog.GetString("Longitudinal") + ": "));
+            longForceBox.Add(new Label(0, (BarGraphHight - TextHight) / 2, GraphLabelWidth, BarGraphHight, Viewer.Catalog.GetString("Longitudinal") + ": "));
             var latForceBox = vbox.AddLayoutHorizontal(BarGraphHight + 4);
-            latForceBox.Add(new Label(0, (BarGraphHight - textHeight) / 2, labelWidth, BarGraphHight, Viewer.Catalog.GetString("Lateral") + ": "));
+            latForceBox.Add(new Label(0, (BarGraphHight - TextHight) / 2, GraphLabelWidth, BarGraphHight, Viewer.Catalog.GetString("Lateral") + ": "));
 
             if (PlayerTrain != null)
             {
@@ -174,18 +183,17 @@ namespace Orts.Viewer3D.Popups
                 }
 
                 vbox.AddHorizontalSeparator();
-                var textbox = vbox.AddLayoutHorizontalLineOfText();
-                textbox.Add(new Label(textHeight * 9, textHeight, Viewer.Catalog.GetString("Max Long Force") + ": ", LabelAlignment.Right));
-                textbox.Add(MaxLongForceForTextBox = new Label(textHeight * 7, textHeight, FormatStrings.FormatLargeForce(0f, false), LabelAlignment.Right));
-                textbox.Add(new Label(textHeight * 9, textHeight, Viewer.Catalog.GetString("Max Lat Force") + ": ", LabelAlignment.Right));
-                textbox.Add(MaxLatForceForTextBox = new Label(textHeight * 7, textHeight, FormatStrings.FormatLargeForce(0f, false), LabelAlignment.Right));
+                var textLine = vbox.AddLayoutHorizontalLineOfText();
 
-                textbox.Add(new Label(textHeight * 8, textHeight, Viewer.Catalog.GetString("Min Coupler") + ": ", LabelAlignment.Right));
-                textbox.Add(new Label(textHeight * 5, textHeight, FormatStrings.FormatLargeForce(MinCouplerStrengthN, false), LabelAlignment.Right));
-                textbox.Add(new Label(textHeight * 8, textHeight, Viewer.Catalog.GetString("Min Derail") + ": ", LabelAlignment.Right));
-                textbox.Add(new Label(textHeight * 5, textHeight, FormatStrings.FormatLargeForce(MinDerailForceN, false), LabelAlignment.Right));
+                textLine.Add(new Label(TextHight * 9, TextHight, Viewer.Catalog.GetString("Max Long Force") + ": ", LabelAlignment.Right));
+                textLine.Add(MaxLongForceForTextBox = new Label(TextHight * 7, TextHight, FormatStrings.FormatLargeForce(0f, false), LabelAlignment.Right));
+                textLine.Add(new Label(TextHight * 9, TextHight, Viewer.Catalog.GetString("Max Lat Force") + ": ", LabelAlignment.Right));
+                textLine.Add(MaxLatForceForTextBox = new Label(TextHight * 7, TextHight, FormatStrings.FormatLargeForce(0f, false), LabelAlignment.Right));
 
-                LastAbsForceN = 0f;
+                textLine.Add(new Label(TextHight * 8, TextHight, Viewer.Catalog.GetString("Min Coupler") + ": ", LabelAlignment.Right));
+                textLine.Add(new Label(TextHight * 5, TextHight, FormatStrings.FormatLargeForce(MinCouplerStrengthN, false), LabelAlignment.Right));
+                textLine.Add(new Label(TextHight * 8, TextHight, Viewer.Catalog.GetString("Min Derail") + ": ", LabelAlignment.Right));
+                textLine.Add(new Label(TextHight * 5, TextHight, FormatStrings.FormatLargeForce(MinDerailForceN, false), LabelAlignment.Right));
             }
 
             return hbox;
@@ -198,28 +206,27 @@ namespace Orts.Viewer3D.Popups
         {
             base.PrepareFrame(elapsedTime, updateFull);
 
-            //PrepareCalls++;
-            //SimSeconds += elapsedTime.RealSeconds;
-            //
-            //if (PrepareCalls % 60 == 0)
-            //{
-            //    // Trace.TraceInformation("TrainForcesWindow:PrepareFrame() called for the {0} time; elapsed time is {1:F3}", PrepareCalls, SimSeconds - LastLogSeconds);
-            //    LastLogSeconds = SimSeconds;
-            //}
-
             if (updateFull)
             {
-                if (PlayerTrain != Owner.Viewer.PlayerTrain || Owner.Viewer.PlayerTrain.Cars.Count != LastPlayerTrainCars || (Owner.Viewer.PlayerLocomotive != null &&
-                    LastPlayerLocomotiveFlippedState != Owner.Viewer.PlayerLocomotive.Flipped))
+                if (PlayerTrain != Owner.Viewer.PlayerTrain || Owner.Viewer.PlayerTrain.Cars.Count != LastPlayerTrainCars ||
+                    (Owner.Viewer.PlayerLocomotive != null && LastPlayerLocomotiveFlippedState != Owner.Viewer.PlayerLocomotive.Flipped))
                 {
                     PlayerTrain = Owner.Viewer.PlayerTrain;
                     LastPlayerTrainCars = Owner.Viewer.PlayerTrain.Cars.Count;
                     if (Owner.Viewer.PlayerLocomotive != null) LastPlayerLocomotiveFlippedState = Owner.Viewer.PlayerLocomotive.Flipped;
+                    ResizeWindow(Window.DecorationSize.X + GraphLabelWidth + BarWidth * PlayerTrain.Cars.Count + 4);
                     Layout();
                 }
             }
-            else if (PlayerTrain != null)
+
+            if (PlayerTrain != null)
             {
+                if (PlayerTrain.Cars.Count != CouplerForceBarGraph.Length)
+                {
+                    ResizeWindow(Window.DecorationSize.X + GraphLabelWidth + BarWidth * PlayerTrain.Cars.Count + 4);
+                    Layout();
+                }
+
                 var absMaxLongForceN = 0.0f; var longForceSign = 1.0f; var maxLongForceCarNum = 0;
                 var absMaxLatForceN = 0.0f; var latForceSign = 1.0f; var maxLatForceCarNum = 0;
 
@@ -230,23 +237,32 @@ namespace Orts.Viewer3D.Popups
                     UpdateWheelForceImage(car, carPosition);
 
                     var longForceN = car.CouplerForceU; var absLongForceN = Math.Abs(longForceN);
-                    if (absLongForceN > absMaxLongForceN) { absMaxLongForceN = absLongForceN; longForceSign = longForceN > 0 ? -1.0f : 1.0f; maxLongForceCarNum = carPosition + 1; }
+                    if (absLongForceN > absMaxLongForceN)
+                    {
+                        absMaxLongForceN = absLongForceN;
+                        longForceSign = longForceN > 0 ? -1.0f : 1.0f;
+                        maxLongForceCarNum = carPosition + 1;
+                    }
 
                     // see TrainCar.UpdateTrainDerailmentRisk()
                     var absLatForceN = car.TotalWagonLateralDerailForceN;
                     if (car.WagonNumBogies <= 0 || car.GetWagonNumAxles() <= 0) { absLatForceN = car.DerailmentCoefficient * DerailForceScaleN; }
-                    if (absLatForceN > absMaxLatForceN) { absMaxLatForceN = absLatForceN; latForceSign = (car.CouplerForceU > 0 && car.CouplerSlackM < 0) ? -1.0f : 1.0f; maxLatForceCarNum = carPosition + 1; }
+                    if (absLatForceN > absMaxLatForceN)
+                    {
+                        absMaxLatForceN = absLatForceN;
+                        latForceSign = (car.CouplerForceU > 0 && car.CouplerSlackM < 0) ? -1.0f : 1.0f;
+                        maxLatForceCarNum = carPosition + 1;
+                    }
 
                     carPosition++;
                 }
 
-                // update max coupler force; TODO: smooth the downslope 
                 if (MaxLongForceForTextBox != null)
                 {
+                    // TODO: smooth the downslope
                     MaxLongForceForTextBox.Text = FormatStrings.FormatLargeForce(absMaxLongForceN * longForceSign, false) + string.Format("  ({0})", maxLongForceCarNum);
                 }
 
-                // update max derail force
                 if (MaxLatForceForTextBox != null)
                 {
                     MaxLatForceForTextBox.Text = FormatStrings.FormatLargeForce(absMaxLatForceN * latForceSign, false) + string.Format("  ({0})", maxLatForceCarNum);
@@ -334,8 +350,7 @@ namespace Orts.Viewer3D.Popups
             if (car.CouplerForceU > 0 && car.CouplerSlackM < 0) { directionalScaleN /= 1.77f;  }  // push to outside
             else if (car.CouplerForceU < 0 && car.CouplerSlackM > 0) { directionalScaleN /= 1.34f; }  // pull to inside
 
-            #region Debug
-            // debug
+#if DEBUG
             if (car.DerailmentCoefficient > 1.0f)
             {
                 var numWheels = car.GetWagonNumAxles() * 2; if (numWheels <= 0) { numWheels = 4; }
@@ -346,7 +361,7 @@ namespace Orts.Viewer3D.Popups
                     FormatStrings.FormatLargeForce(car.TotalWagonLateralDerailForceN, false), car.DerailmentCoefficient, FormatStrings.FormatLargeForce(wheelDerailForceN, false),
                     FormatStrings.FormatLargeForce(absForceN, false), FormatStrings.FormatLargeForce(DerailForceScaleN, false), car.WagonNumBogies);
             }
-            #endregion
+#endif
 
             if (absForceN > 1000f && DerailForceScaleN > 1000f)  // exclude improbable values
             {
@@ -358,8 +373,7 @@ namespace Orts.Viewer3D.Popups
                 if (idx < 0) { idx = 0; } else if (idx > 18) { idx = 18; }
             }
 
-            #region Debug
-            // debug
+#if DEBUG
             if (idx == 0 || idx == 18)
             {
                 var numWheels = car.GetWagonNumAxles() * 2; if (numWheels <= 0) { numWheels = 4; }
@@ -370,10 +384,22 @@ namespace Orts.Viewer3D.Popups
                     FormatStrings.FormatLargeForce(car.TotalWagonLateralDerailForceN, false), car.DerailmentCoefficient, FormatStrings.FormatLargeForce(wheelDerailForceN, false),
                     FormatStrings.FormatLargeForce(absForceN, false), FormatStrings.FormatLargeForce(DerailForceScaleN, false), car.WagonNumBogies);
             }
-            #endregion
+#endif
 
             if (car.WagonType == TrainCar.WagonTypes.Engine) { WheelForceBarGraph[carPosition].Source = new Rectangle(1 + idx * BarWidth, 0, BarWidth, BarGraphHight); }
             else { WheelForceBarGraph[carPosition].Source = new Rectangle(1 + idx * BarWidth, BarGraphHight, BarWidth, BarGraphHight); }
+        }
+
+        /// <summary>
+        /// Resize the window to fit the bar graph for the number of cars.
+        /// Limited by min and max size.
+        /// </summary>
+        void ResizeWindow(int newWidth)
+        {
+            if (newWidth < WindowWidthMin) { newWidth = WindowWidthMin; }
+            else if (newWidth > WindowWidthMax) { newWidth = WindowWidthMax; }
+
+            SizeTo(newWidth, WindowHeight);
         }
     }
 }
