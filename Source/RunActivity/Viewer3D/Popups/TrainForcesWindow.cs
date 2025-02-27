@@ -113,6 +113,7 @@ namespace Orts.Viewer3D.Popups
         Label MaxDerailForceForTextBox;
 
         // window size
+        readonly WindowTextFont Font;
         readonly int TextHight;
         readonly int GraphLabelWidth;
         readonly int TextLineWidth;
@@ -132,7 +133,8 @@ namespace Orts.Viewer3D.Popups
                    Window.DecorationSize.Y + owner.TextFontDefault.Height * 2 + BarHight * 2 + HalfBarHight + 18,
                    Viewer.Catalog.GetString("Train Forces"))
         {
-            TextHight = owner.TextFontDefault.Height;
+            Font = owner.TextFontDefault;  // for Font.MeasureString(string)
+            TextHight = Font.Height;
             GraphLabelWidth = TextHight * 6;
             TextLineWidth = TextHight * (9 + 7 + 9 + 7 + 8 + 5 + 8 + 5) + 2;
             WindowHeight = Location.Height;
