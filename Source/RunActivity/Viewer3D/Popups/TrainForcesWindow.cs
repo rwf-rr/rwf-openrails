@@ -74,31 +74,33 @@ using Orts.Simulation.RollingStocks;
 using ORTS.Common;
 using System.Diagnostics;
 using System;
+using System.IO;
 
 namespace Orts.Viewer3D.Popups
 {
     public class TrainForcesWindow : Window
     {
-        const float HighCouplerStrengthN = 2.2e6f; // 500 klbf
-        const float ImpossiblyHighForce = 9.999e8f;
-
         static Texture2D ForceBarTextures;
         const int BarGraphHight = 40;
-        const int HalfBarGraphHight = 20;
+        const int HalfBarGraphHight = 22;
         const int BarWidth = 6;
 
         Train PlayerTrain;
         int LastPlayerTrainCars;
         bool LastPlayerLocomotiveFlippedState;
 
-        float MinCouplerStrengthN = ImpossiblyHighForce;
+        float LimitForCouplerStrengthN = 2.2e6f;  // 500k lbf, used for graph scale only
         float CouplerStrengthScaleN;
 
-        float MinDerailForceN = ImpossiblyHighForce;
+        float LimitForDerailForceN = 1.55e5f;  // 35k lbf, used for graph scale only
         float DerailForceScaleN;
+
+        float LimitForBrakeForceN = 2.0e5f;  // 45k lbf, used for graph scale only
+        float BrakeForceScaleN; 
 
         Image[] CouplerForceBarGraph;
         Image[] WheelForceBarGraph;
+        Image[] BrakeForceBarGraph;
 
         Label MaxLongForceForTextBox;
         Label MaxLatForceForTextBox;
@@ -119,7 +121,9 @@ namespace Orts.Viewer3D.Popups
         /// than 1000 pixels.
         /// </summary>
         public TrainForcesWindow(WindowManager owner)
-            : base(owner, Window.DecorationSize.X + 500, Window.DecorationSize.Y + owner.TextFontDefault.Height * 2 + BarGraphHight * 2 + 18, Viewer.Catalog.GetString("Train Forces"))
+            : base(owner, Window.DecorationSize.X + 500, 
+                   Window.DecorationSize.Y + owner.TextFontDefault.Height * 2 + BarGraphHight * 2 + HalfBarGraphHight + 18,
+                   Viewer.Catalog.GetString("Train Forces"))
         {
             TextHight = owner.TextFontDefault.Height;
             GraphLabelWidth = TextHight * 6;
@@ -142,6 +146,18 @@ namespace Orts.Viewer3D.Popups
         }
 
         /// <summary>
+        /// Resize the window to fit the bar graph for the number of cars.
+        /// Limited by min and max size.
+        /// </summary>
+        void ResizeWindow(int newWidth)
+        {
+            if (newWidth < WindowWidthMin) { newWidth = WindowWidthMin; }
+            else if (newWidth > WindowWidthMax) { newWidth = WindowWidthMax; }
+
+            SizeTo(newWidth, WindowHeight);
+        }
+
+        /// <summary>
         /// Create the layout. Defines the components within the window.
         /// </summary>
         protected override ControlLayout Layout(ControlLayout layout)
@@ -160,6 +176,8 @@ namespace Orts.Viewer3D.Popups
             longForceBox.Add(new Label(0, (BarGraphHight - TextHight) / 2, GraphLabelWidth, BarGraphHight, Viewer.Catalog.GetString("Longitudinal") + ": "));
             var latForceBox = vbox.AddLayoutHorizontal(BarGraphHight + 4);
             latForceBox.Add(new Label(0, (BarGraphHight - TextHight) / 2, GraphLabelWidth, BarGraphHight, Viewer.Catalog.GetString("Lateral") + ": "));
+            var brakeForceBox = vbox.AddLayoutHorizontal(HalfBarGraphHight + 4);
+            brakeForceBox.Add(new Label(0, (HalfBarGraphHight - TextHight) / 2, GraphLabelWidth, HalfBarGraphHight, Viewer.Catalog.GetString("Brake") + ": "));
 
             if (PlayerTrain != null)
             {
@@ -167,6 +185,7 @@ namespace Orts.Viewer3D.Popups
 
                 CouplerForceBarGraph = new Image[PlayerTrain.Cars.Count];
                 WheelForceBarGraph = new Image[PlayerTrain.Cars.Count];
+                BrakeForceBarGraph = new Image[PlayerTrain.Cars.Count];
 
                 int carPosition = 0;
                 foreach (var car in PlayerTrain.Cars)
@@ -178,6 +197,10 @@ namespace Orts.Viewer3D.Popups
                     latForceBox.Add(WheelForceBarGraph[carPosition] = new Image(BarWidth, BarGraphHight));
                     WheelForceBarGraph[carPosition].Texture = ForceBarTextures;
                     UpdateWheelForceImage(car, carPosition);
+
+                    brakeForceBox.Add(BrakeForceBarGraph[carPosition] = new Image(BarWidth, HalfBarGraphHight));
+                    BrakeForceBarGraph[carPosition].Texture = ForceBarTextures;
+                    UpdateBrakeForceImage(car, carPosition);
 
                     carPosition++;
                 }
@@ -191,9 +214,11 @@ namespace Orts.Viewer3D.Popups
                 textLine.Add(MaxLatForceForTextBox = new Label(TextHight * 7, TextHight, FormatStrings.FormatLargeForce(0f, false), LabelAlignment.Right));
 
                 textLine.Add(new Label(TextHight * 8, TextHight, Viewer.Catalog.GetString("Min Coupler") + ": ", LabelAlignment.Right));
-                textLine.Add(new Label(TextHight * 5, TextHight, FormatStrings.FormatLargeForce(MinCouplerStrengthN, false), LabelAlignment.Right));
+                textLine.Add(new Label(TextHight * 5, TextHight, FormatStrings.FormatLargeForce(LimitForCouplerStrengthN, false), LabelAlignment.Right));
                 textLine.Add(new Label(TextHight * 8, TextHight, Viewer.Catalog.GetString("Min Derail") + ": ", LabelAlignment.Right));
-                textLine.Add(new Label(TextHight * 5, TextHight, FormatStrings.FormatLargeForce(MinDerailForceN, false), LabelAlignment.Right));
+                textLine.Add(new Label(TextHight * 5, TextHight, FormatStrings.FormatLargeForce(LimitForDerailForceN, false), LabelAlignment.Right));
+
+                // no text for brake force
             }
 
             return hbox;
@@ -235,6 +260,7 @@ namespace Orts.Viewer3D.Popups
                 {
                     UpdateCouplerForceImage(car, carPosition);
                     UpdateWheelForceImage(car, carPosition);
+                    UpdateBrakeForceImage(car, carPosition);
 
                     var longForceN = car.CouplerForceU; var absLongForceN = Math.Abs(longForceN);
                     if (absLongForceN > absMaxLongForceN)
@@ -276,31 +302,35 @@ namespace Orts.Viewer3D.Popups
         /// </summary>
         protected void SetConsistProperties(Train theTrain)
         {
-            float minCouplerBreakN = ImpossiblyHighForce;
-            float minDerailForceN = ImpossiblyHighForce;
+            float lowestCouplerBreakN = LimitForCouplerStrengthN;
+            float lowestDerailForceN = LimitForDerailForceN;
+            float lowestMaxBrakeForceN = LimitForBrakeForceN;
 
             foreach (var car in theTrain.Cars)
             {
                 if (car is MSTSWagon wag)
                 {
-                    var couplerBreakForceN = wag.GetCouplerBreak2N() > 1.0f ? wag.GetCouplerBreak2N() : wag.GetCouplerBreak1N();
-                    if (couplerBreakForceN < minCouplerBreakN) { minCouplerBreakN = couplerBreakForceN; }
+                    var couplerBreakForceN = wag.GetCouplerBreak2N() > 1000f ? wag.GetCouplerBreak2N() : wag.GetCouplerBreak1N();
+                    if (couplerBreakForceN > 1000f && couplerBreakForceN < lowestCouplerBreakN) { lowestCouplerBreakN = couplerBreakForceN; }
 
                     // simplified from TrainCar.UpdateTrainDerailmentRisk()
-                    var numWheels = wag.GetWagonNumAxles() * 2; 
+                    var numWheels = wag.GetWagonNumAxles() * 2;
                     if (numWheels <= 0) { numWheels = 4; }  // err towards higher vertical force
                     var wheelDerailForceN = wag.MassKG / numWheels * wag.GetGravitationalAccelerationMpS2();
-                    if (wheelDerailForceN > 1000f)  // exclude improbable vales
-                    {
-                        if (wheelDerailForceN < minDerailForceN) { minDerailForceN = wheelDerailForceN; }
-                    }
+                    if (wheelDerailForceN > 1000f && wheelDerailForceN < lowestDerailForceN) { lowestDerailForceN = wheelDerailForceN; }
+
+                    var maxBrakeForceN = wag.MaxBrakeForceN;
+                    if (maxBrakeForceN > 1000f && maxBrakeForceN < lowestMaxBrakeForceN) { lowestMaxBrakeForceN = maxBrakeForceN; }
                 }
             }
-            MinCouplerStrengthN = minCouplerBreakN;
-            CouplerStrengthScaleN = Math.Min(minCouplerBreakN, HighCouplerStrengthN) * 1.05f;
+            LimitForCouplerStrengthN = lowestCouplerBreakN;
+            CouplerStrengthScaleN = lowestCouplerBreakN * 1.05f;
 
-            MinDerailForceN = minDerailForceN;
-            DerailForceScaleN = Math.Min(minDerailForceN, HighCouplerStrengthN) * 1.05f;
+            LimitForDerailForceN = lowestDerailForceN;
+            DerailForceScaleN = lowestDerailForceN * 1.1f;
+
+            LimitForBrakeForceN = lowestMaxBrakeForceN;
+            BrakeForceScaleN = lowestMaxBrakeForceN * 1.5f;
         }
 
         /// <summary>
@@ -391,15 +421,25 @@ namespace Orts.Viewer3D.Popups
         }
 
         /// <summary>
-        /// Resize the window to fit the bar graph for the number of cars.
-        /// Limited by min and max size.
+        /// Update the brake force icon for a car. The image has 10 icons;
+        /// index 0 is neutral, 9 is max braking.
         /// </summary>
-        void ResizeWindow(int newWidth)
+        protected void UpdateBrakeForceImage(TrainCar car, int carPosition)
         {
-            if (newWidth < WindowWidthMin) { newWidth = WindowWidthMin; }
-            else if (newWidth > WindowWidthMax) { newWidth = WindowWidthMax; }
+            var idx = 0;  // neutral
+            var absForceN = car.BrakeForceN;
 
-            SizeTo(newWidth, WindowHeight);
+            if (absForceN > 1000f && BrakeForceScaleN > 1000f)  // exclude improbabl values
+            {
+                // log scale, to be sensitve at small application:  1k lbf, 7%, 146%, 22%, 30%, 39%, 51%, 68%, 100%
+                var relForce = absForceN / BrakeForceScaleN;
+                var logForce = (1 / (1 + Math.Pow(10, -1.5f * relForce)) - 0.5f) * 17.05f + 1f;
+                idx = (int)Math.Floor(logForce);
+                if (idx < 0) { idx = 0; } else if (idx > 9) { idx = 9; }
+            }
+
+            if (car.WagonType == TrainCar.WagonTypes.Engine) { BrakeForceBarGraph[carPosition].Source = new Rectangle(1 + idx * BarWidth, BarGraphHight * 2, BarWidth, HalfBarGraphHight); }
+            else { BrakeForceBarGraph[carPosition].Source = new Rectangle(1 + idx * BarWidth, BarGraphHight * 2 + HalfBarGraphHight, BarWidth, HalfBarGraphHight); }
         }
     }
 }
