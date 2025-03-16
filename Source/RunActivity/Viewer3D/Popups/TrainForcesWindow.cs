@@ -151,7 +151,7 @@ namespace Orts.Viewer3D.Popups
             if (ForceBarTextures == null)
             {
                 ForceBarTextures = SharedTextureManager.Get(Owner.Viewer.RenderProcess.GraphicsDevice, System.IO.Path.Combine(Owner.Viewer.ContentPath,
-                    "BarGraph.png"));
+                    "TrainForcesSprites.png"));
             }
         }
 

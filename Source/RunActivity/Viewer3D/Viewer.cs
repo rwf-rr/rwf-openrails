@@ -102,7 +102,7 @@ namespace Orts.Viewer3D
         public CarOperationsWindow CarOperationsWindow { get; private set; } // F9 sub-window for car operations
         public TrainDpuWindow TrainDpuWindow { get; private set; } // Shift + F9 train distributed power window
         public NextStationWindow NextStationWindow { get; private set; } // F10 window
-        public TrainForcesWindow TrainForcesWindow { get; private set; } // F11 window
+        public TrainForcesWindow TrainForcesWindow { get; private set; } // Alt-F7 window
         public CompassWindow CompassWindow { get; private set; } // 0 window
         public TracksDebugWindow TracksDebugWindow { get; private set; } // Control-Alt-F6
         public SignallingDebugWindow SignallingDebugWindow { get; private set; } // Control-Alt-F11 window
