@@ -79,47 +79,45 @@ using Microsoft.Xna.Framework.Graphics;
 using Orts.Simulation.Physics;
 using Orts.Simulation.RollingStocks;
 using ORTS.Common;
-using System.Diagnostics;
 using System;
-using System.IO;
 
 namespace Orts.Viewer3D.Popups
 {
     public class TrainForcesWindow : Window
     {
-        static Texture2D ForceBarTextures;
-        const int BarHight = 40;
-        const int HalfBarHight = 22;
-        const int BarWidth = 6;
+        private static Texture2D ForceBarTextures;
+        private const int BarHight = 40;
+        private const int HalfBarHight = 22;
+        private const int BarWidth = 6;
 
-        Train PlayerTrain;
-        int LastPlayerTrainCars;
-        bool LastPlayerLocomotiveFlippedState;
+        private Train PlayerTrain;
+        private int LastPlayerTrainCars;
+        private bool LastPlayerLocomotiveFlippedState;
 
-        float LimitForCouplerStrengthN = 2.2e6f;  // 500k lbf, used for graph scale only
-        float CouplerStrengthScaleN;
+        private float LimitForCouplerStrengthN = 2.2e6f;  // 500k lbf, used for graph scale only
+        private float CouplerStrengthScaleN;
 
-        float LimitForDerailForceN = 1.55e5f;  // 35k lbf, used for graph scale only
-        float DerailForceScaleN;
+        private float LimitForDerailForceN = 1.55e5f;  // 35k lbf, used for graph scale only
+        private float DerailForceScaleN;
 
-        float LimitForBrakeForceN = 2.0e5f;  // 45k lbf, used for graph scale only
-        float BrakeForceScaleN; 
+        private float LimitForBrakeForceN = 2.0e5f;  // 45k lbf, used for graph scale only
+        private float BrakeForceScaleN;
 
-        Image[] CouplerForceBarGraph;
-        Image[] WheelForceBarGraph;
-        Image[] BrakeForceBarGraph;
+        private Image[] CouplerForceBarGraph;
+        private Image[] WheelForceBarGraph;
+        private Image[] BrakeForceBarGraph;
 
-        Label MaxCouplerForceForTextBox;
-        Label MaxDerailForceForTextBox;
+        private Label MaxCouplerForceForTextBox;
+        private Label MaxDerailForceForTextBox;
 
         // window size
-        readonly WindowTextFont Font;
-        readonly int TextHight;
-        readonly int GraphLabelWidth;
-        readonly int TextLineWidth;
-        readonly int WindowHeight;
-        readonly int WindowWidthMin;
-        readonly int WindowWidthMax;
+        private readonly WindowTextFont Font;
+        private readonly int TextHight;
+        private readonly int GraphLabelWidth;
+        private readonly int TextLineWidth;
+        private readonly int WindowHeight;
+        private readonly int WindowWidthMin;
+        private readonly int WindowWidthMax;
 
 
         /// <summary>
@@ -159,7 +157,7 @@ namespace Orts.Viewer3D.Popups
         /// Resize the window to fit the bar graph for the number of cars.
         /// Limited by min and max size.
         /// </summary>
-        void ResizeWindow(int newWidth)
+        protected void ResizeWindow(int newWidth)
         {
             if (newWidth < WindowWidthMin) { newWidth = WindowWidthMin; }
             else if (newWidth > WindowWidthMax) { newWidth = WindowWidthMax; }
@@ -312,7 +310,7 @@ namespace Orts.Viewer3D.Popups
         /// Get static force values from consist, such as coupler strength and
         /// force that causes the wheel to derail.
         /// </summary>
-        protected void SetConsistProperties(Train theTrain)
+        private void SetConsistProperties(Train theTrain)
         {
             float lowestCouplerBreakN = LimitForCouplerStrengthN;
             float lowestDerailForceN = LimitForDerailForceN;
@@ -349,7 +347,7 @@ namespace Orts.Viewer3D.Popups
         /// Update the coupler force (longitudinal) icon for a car. The image has 19 icons;
         /// index 0 is max push, 9 is neutral, 18 is max pull.
         /// </summary>
-        protected void UpdateCouplerForceImage(TrainCar car, int carPosition)
+        private void UpdateCouplerForceImage(TrainCar car, int carPosition)
         {
             var idx = 9;  // neutral
             var absForceN = Math.Abs(car.SmoothedCouplerForceUN);
@@ -373,7 +371,7 @@ namespace Orts.Viewer3D.Popups
         /// Update the wheel force (lateral) icon for a car. The image has 19 icons;
         /// index 0 is max push (outside), 9 is neutral, 18 is max pull (inside).
         /// </summary>
-        protected void UpdateWheelForceImage(TrainCar car, int carPosition)
+        private void UpdateWheelForceImage(TrainCar car, int carPosition)
         {
             var idx = 9;  // neutral
 
@@ -392,19 +390,6 @@ namespace Orts.Viewer3D.Popups
             if (car.CouplerForceU > 0 && car.CouplerSlackM < 0) { directionalScaleN /= 1.77f;  }  // push to outside
             else if (car.CouplerForceU < 0 && car.CouplerSlackM > 0) { directionalScaleN /= 1.34f; }  // pull to inside
 
-#if DEBUG
-            if (car.DerailmentCoefficient > 1.0f)
-            {
-                var numWheels = car.GetWagonNumAxles() * 2; if (numWheels <= 0) { numWheels = 4; }
-                var wheelDerailForceN = car.MassKG / numWheels * car.GetGravitationalAccelerationMpS2();
-
-                Debug.WriteLine("DebugCoeff > 1: car-no {0}, car-id {1}, mass {2}, axles {3}, bogies {10}, vertical {4}, lateral {5}, Coeff {6}, limit {7}, abs {8}, scale {9}",
-                    carPosition, car.CarID, FormatStrings.FormatLargeMass(car.MassKG, false, false), car.GetWagonNumAxles(), FormatStrings.FormatLargeForce(car.TotalWagonVerticalDerailForceN, false),
-                    FormatStrings.FormatLargeForce(car.TotalWagonLateralDerailForceN, false), car.DerailmentCoefficient, FormatStrings.FormatLargeForce(wheelDerailForceN, false),
-                    FormatStrings.FormatLargeForce(absForceN, false), FormatStrings.FormatLargeForce(DerailForceScaleN, false), car.WagonNumBogies);
-            }
-#endif
-
             if (absForceN > 1000f && DerailForceScaleN > 1000f)  // exclude improbable values
             {
                 // flatter scale due to discrete curve radus: 1k lbf, 21%, 37%, 51%, 64%, 74%, 84%, 93%, 100%
@@ -415,19 +400,6 @@ namespace Orts.Viewer3D.Popups
                 if (idx < 0) { idx = 0; } else if (idx > 18) { idx = 18; }
             }
 
-#if DEBUG
-            if (idx == 0 || idx == 18)
-            {
-                var numWheels = car.GetWagonNumAxles() * 2; if (numWheels <= 0) { numWheels = 4; }
-                var wheelDerailForceN = car.MassKG / numWheels * car.GetGravitationalAccelerationMpS2();
-
-                Debug.WriteLine("Idx at boundary: car-no {0}, car-id {1}, mass {2}, axles {3}, bogies {10}, vertical {4}, lateral {5}, Coeff {6}, limit {7}, abs {8}, scale {9}",
-                    carPosition, car.CarID, FormatStrings.FormatLargeMass(car.MassKG, false, false), car.GetWagonNumAxles(), FormatStrings.FormatLargeForce(car.TotalWagonVerticalDerailForceN, false),
-                    FormatStrings.FormatLargeForce(car.TotalWagonLateralDerailForceN, false), car.DerailmentCoefficient, FormatStrings.FormatLargeForce(wheelDerailForceN, false),
-                    FormatStrings.FormatLargeForce(absForceN, false), FormatStrings.FormatLargeForce(DerailForceScaleN, false), car.WagonNumBogies);
-            }
-#endif
-
             if (car.WagonType == TrainCar.WagonTypes.Engine) { WheelForceBarGraph[carPosition].Source = new Rectangle(1 + idx * BarWidth, 0, BarWidth, BarHight); }
             else { WheelForceBarGraph[carPosition].Source = new Rectangle(1 + idx * BarWidth, BarHight, BarWidth, BarHight); }
         }
@@ -436,7 +408,7 @@ namespace Orts.Viewer3D.Popups
         /// Update the brake force icon for a car. The image has 10 icons;
         /// index 0 is neutral, 9 is max braking.
         /// </summary>
-        protected void UpdateBrakeForceImage(TrainCar car, int carPosition)
+        private void UpdateBrakeForceImage(TrainCar car, int carPosition)
         {
             var idx = 0;  // neutral
             var absForceN = car.BrakeForceN;
