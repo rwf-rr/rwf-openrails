@@ -1,4 +1,4 @@
-// COPYRIGHT 2009, 2010, 2011, 2012, 2013, 2014 by the Open Rails project.
+﻿// COPYRIGHT 2009, 2010, 2011, 2012, 2013, 2014 by the Open Rails project.
 // 
 // This file is part of Open Rails.
 // 
@@ -128,7 +128,7 @@ namespace Orts.Simulation.RollingStocks.SubSystems.Brakes.MSTS
             SteamBrakeCompensation = 1.0f;
 
             // Process manual braking on all cars
-            if (lead != null)
+            if (lead != null && lead.BrakemanBrakeController != null)
             {
                 BrakemanBrakeSettingValue = lead.BrakemanBrakeController.CurrentValue;
             }
@@ -159,7 +159,7 @@ namespace Orts.Simulation.RollingStocks.SubSystems.Brakes.MSTS
             // If car is a locomotive or tender, then process engine brake
             if (Car.WagonType == MSTSWagon.WagonTypes.Engine || Car.WagonType == MSTSWagon.WagonTypes.Tender) // Engine brake
             {
-                if (lead != null)
+                if (lead != null && lead.EngineBrakeController != null)
                 {
                     EngineBrakeSettingValue = lead.EngineBrakeController.CurrentValue;
                     if (lead.SteamEngineBrakeFitted)

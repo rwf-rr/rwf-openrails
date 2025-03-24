@@ -277,9 +277,26 @@ namespace Orts.Viewer3D
         public PoseableShape(Viewer viewer, string path, WorldPosition initialPosition, ShapeFlags flags)
             : base(viewer, path, initialPosition, flags)
         {
-            XNAMatrices = new Matrix[SharedShape.Matrices.Length];
-            for (int iMatrix = 0; iMatrix < SharedShape.Matrices.Length; ++iMatrix)
-                XNAMatrices[iMatrix] = SharedShape.Matrices[iMatrix];
+            if (SharedShape.Matrices.Length > 0)
+            {
+                XNAMatrices = new Matrix[SharedShape.Matrices.Length];
+                for (int iMatrix = 0; iMatrix < SharedShape.Matrices.Length; ++iMatrix)
+                    XNAMatrices[iMatrix] = SharedShape.Matrices[iMatrix];
+            }
+            else // If the shape file is missing or fails to load, we need some default data to prevent crashes
+            {
+                if (path != null && path != "Empty")
+                {
+                    string location = path;
+                    if (path != null && path.Contains('\0'))
+                        location = path.Split('\0')[0];
+
+                    Trace.TraceWarning("Couldn't load shape {0} file may be corrupt", location);
+                }
+                // The 0th matrix should always be the identity matrix
+                XNAMatrices = new Matrix[1];
+                XNAMatrices[0] = Matrix.Identity;
+            }
 
             if (SharedShape.LodControls.Length > 0 && SharedShape.LodControls[0].DistanceLevels.Length > 0 && SharedShape.LodControls[0].DistanceLevels[0].SubObjects.Length > 0 && SharedShape.LodControls[0].DistanceLevels[0].SubObjects[0].ShapePrimitives.Length > 0)
                 Hierarchy = SharedShape.LodControls[0].DistanceLevels[0].SubObjects[0].ShapePrimitives[0].Hierarchy;
@@ -1959,6 +1976,11 @@ namespace Orts.Viewer3D
         public string SoundFileName = "";
         public float CustomAnimationFPS = 8;
 
+        /// <summary>
+        /// Store for matrixes needed to be reused in later calculations, e.g. for 3d cabview mouse control
+        /// </summary>
+        public readonly Dictionary<int, Matrix> StoredResultMatrixes = new Dictionary<int, Matrix>();
+
 
         readonly Viewer Viewer;
         public readonly string FilePath;
@@ -1998,7 +2020,6 @@ namespace Orts.Viewer3D
         /// </summary>
         void LoadContent()
         {
-            Trace.Write("S");
             var filePath = FilePath;
             // commented lines allow reading the animation block from an additional file in an Openrails subfolder
 //           string dir = Path.GetDirectoryName(filePath);
@@ -2593,6 +2614,9 @@ namespace Orts.Viewer3D
                             hi = shapePrimitive.Hierarchy[hi];
                         }
                         Matrix.Multiply(ref xnaMatrix, ref xnaDTileTranslation, out xnaMatrix);
+
+                        if (StoredResultMatrixes.ContainsKey(shapePrimitive.HierarchyIndex))
+                            StoredResultMatrixes[shapePrimitive.HierarchyIndex] = xnaMatrix;
 
                         // TODO make shadows depend on shape overrides
 

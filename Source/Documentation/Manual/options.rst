@@ -110,6 +110,17 @@ This option uses the train control system scripts for locomotives where
 these have been implemented.
 
 
+.. _auto-save:
+
+Auto Save
+--------
+
+This option will make saves automatically at regular intervals just as though you had pressed ``<F2>`` 
+for a  :ref:`manual save<driving-saveresume>`. This option is off by default, 
+
+When Auto Save is on, you can still make manual saves and doing so resets the automatic timer.
+
+
 Overspeed Monitor
 -----------------
 
@@ -117,6 +128,40 @@ If a Train Control Script (TCS) is specified for the loco and not disabled, then
 Otherwise, if the loco has an Overspeed Monitor specified in its ENG file, then that monitor will detect excessive speed and respond as it was specified, e.g. by applying emergency braking.
 
 This monitor is enabled by checking the option.
+
+
+.. _telemetry:
+
+Telemetry
+---------
+
+.. image:: images/options-telemetry.png
+
+These options let you choose which (if any) anonymous data collection types you would like to enable, preview the data that will be collected, and visit the `telemetry server and source code <https://telemetry.openrails.org>`_.
+
+Each anonymous data collection type can be set to:
+
+- **Undecided (off)** - (default) no data is collected or sent, but we may ask if you want to participate via :ref:`notifications`
+- **Off** - no data is collected or sent
+- **On** - data is collected and sent automatically
+
+There is no option to allow you to check through the collected data before it is sent.
+
+Application, runtime, operating system, and hardware properties
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+This anonymous data collection type can be previewed to see what will be sent; for example::
+
+  Application = Open Rails U2025.01.31-1152 (X64)
+  Runtime     = .NET Framework 4.8.9290.0
+  System      = Microsoft Windows 11 Home 10.0.26100 (X64; en-GB; en-GB,en-US,ja-JP)
+  Memory      = 32,592 MB
+  CPU         = 12th Gen Intel(R) Core(TM) i7-1255U (GenuineIntel; 12 threads; 2,600 MHz)
+  GPU         = Intel(R) Iris(R) Xe Graphics (Intel Corporation; 128 MB)
+  Direct3D    = 12_1,12_0,11_1,11_0,10_1,10_0,9_3,9_2,9_1
+
+This is also included at the start of every :ref:`log file <driving-logfile>`.
+
 
 Audio Options
 =============
