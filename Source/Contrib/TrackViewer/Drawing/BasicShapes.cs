@@ -81,6 +81,8 @@ namespace ORTS.TrackViewer.Drawing
             LoadAndHighlightTexture(graphicsDevice, contentPath, "pathEnd", "pathEnd",31,31);
             LoadAndHighlightTexture(graphicsDevice, contentPath, "pathWait", "pathWait",31,31);
             LoadAndHighlightTexture(graphicsDevice, contentPath, "pathReverse", "pathReverse", 31, 31);
+            LoadAndHighlightTexture(graphicsDevice, contentPath, "sidingStart", "sidingStart", 31, 31);
+            LoadAndHighlightTexture(graphicsDevice, contentPath, "sidingEnd", "sidingEnd", 31, 31);
             //LoadAndHighlightTexture(graphicsDevice, contentPath, "pathSiding", "pathSiding", 31, 31);
 
             // textures modified from http://www.iconsdb.com

@@ -700,20 +700,38 @@ namespace ORTS.TrackViewer.Editing.Charts
         {
             foreach (KeyValuePair<TrainpathNode,double> item in this.pathData.DistanceAlongPath)
             {
-                if (item.Key.NodeType == TrainpathNodeType.Reverse)
+                if (item.Key.NodeType == TrainpathNodeType.SidingStart)
                 {
-                    
+                    DrawImage(drawingCanvas, ScaledX(item.Value), ScaledY(item.Key.Location.Location.Y), "sidingStart");
+                }
+                else if (item.Key.NodeType == TrainpathNodeType.SidingEnd)
+                {
+                    DrawImage(drawingCanvas, ScaledX(item.Value), ScaledY(item.Key.Location.Location.Y), "sidingEnd");
+                }
+                else if (item.Key.NodeType == TrainpathNodeType.Reverse)
+                {
                     DrawImage(drawingCanvas, ScaledX(item.Value), ScaledY(item.Key.Location.Location.Y), "pathReverse");
                 }
-                if (item.Key.NodeType == TrainpathNodeType.Stop)
+                else if (item.Key.NodeType == TrainpathNodeType.Stop)
                 {
-
                     DrawImage(drawingCanvas, ScaledX(item.Value), ScaledY(item.Key.Location.Location.Y), "pathWait");
                 }
-                if (item.Key.IsBroken)
+                else if (item.Key.IsBroken)
                 {
-
                     DrawImage(drawingCanvas, ScaledX(item.Value), ScaledY(item.Key.Location.Location.Y), "activeBroken");
+                }
+                // because SidingStart and SidingEnd seem only used in the editor
+                else if (item.Key is TrainpathJunctionNode)
+                {
+                    TrainpathJunctionNode jn = (TrainpathJunctionNode)item.Key;
+                    if (jn.IsFacingPoint)
+                    {
+                        DrawImage(drawingCanvas, ScaledX(item.Value), ScaledY(item.Key.Location.Location.Y), "sidingStart");
+                    }
+                    else
+                    {
+                        DrawImage(drawingCanvas, ScaledX(item.Value), ScaledY(item.Key.Location.Location.Y), "sidingEnd");
+                    }
                 }
             }
         }
