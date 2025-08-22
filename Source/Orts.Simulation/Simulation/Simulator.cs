@@ -326,9 +326,42 @@ namespace Orts.Simulation
             if (File.Exists(RoutePath + @"\TSECTION.DAT"))
                 TSectionDat.AddRouteTSectionDatFile(RoutePath + @"\TSECTION.DAT");
 
+            // add grade info to the vector nodes
+            foreach (var trackNode in TDB.TrackDB.TrackNodes)
+            {
+                if (trackNode?.TrVectorNode != null) { trackNode.TrVectorNode.AddGradeInfo(trackNode.Index, TSectionDat.TrackSections); }
+            }
+
+            // create grade markers from the grade info in the vector nodes
+            foreach (var trackNode in TDB.TrackDB.TrackNodes)
+            {
+                if (trackNode?.TrVectorNode != null) { trackNode.TrVectorNode.ProcessGradeInfoAndAddGradeposts(trackNode.Index, TDB.TrackDB); }
+            }
+
+#if DEBUG
+            // dump grade data of each track nodes
+            int cnt = 0;
+            foreach (var trackNode in TDB.TrackDB.TrackNodes)
+            {
+                if (trackNode is null) continue; // first track node in list is empty
+                if (trackNode.TrVectorNode == null) continue;  // only vector nodes have grades
+                if (trackNode.TrVectorNode.GradeList is null) { Debug.WriteLine(String.Format("Track-GradeData: TrackNode = {0}, none", trackNode.Index)); }
+                else {
+
+                    foreach (var gradeSegment in trackNode.TrVectorNode?.GradeList)
+                    {
+                        Debug.WriteLine(String.Format("Track-GradeData: TrackNode = {0}, idx = {1}, grade = {2:F2}, length = {3:F1}, distance = {4:F1}, TX = {5}, TZ = {6}",
+                            trackNode.Index, cnt, gradeSegment.GradePct, gradeSegment.LengthM, gradeSegment.DistanceFromStartM, gradeSegment.TileX, gradeSegment.TileZ));
+                        cnt++;
+                    }
+                }
+            }
+            Debug.WriteLine(String.Format("Track-GradeData-Count: {0}", cnt));
+#endif
+
 #if ACTIVITY_EDITOR
-            //  Where we try to load OR's specific data description (Station, connectors, etc...)
-            orRouteConfig = ORRouteConfig.LoadConfig(TRK.Tr_RouteFile.FileName, RoutePath, TypeEditor.NONE);
+                //  Where we try to load OR's specific data description (Station, connectors, etc...)
+                orRouteConfig = ORRouteConfig.LoadConfig(TRK.Tr_RouteFile.FileName, RoutePath, TypeEditor.NONE);
             orRouteConfig.SetTraveller(TSectionDat, TDB);
 #endif
 
@@ -372,6 +405,23 @@ namespace Orts.Simulation
             ContainerManager = new ContainerManager(this);
             ScriptManager = new ScriptManager();
             Log = new CommandLog(this);
+
+#if DEBUG
+            // dump track items of type grade post
+            if (TDB.TrackDB.TrItemTable != null)
+            {
+                int cnt2 = 0;
+                foreach (var trItem in TDB.TrackDB.TrItemTable)
+                {
+                    if (!(trItem is GradePostItem)) continue;
+                    GradePostItem gradePost = (GradePostItem)trItem;
+                    Debug.WriteLine(String.Format("Track-GradePostItem: TrackNode = {0}, TrItemId = {1}, grade = {2:F2}/{3:F2}, for = {4:F1}/{5:F1}, distance = {6:F1}, TX = {7}, TZ = {8}, name = {9}",
+                        gradePost.TrackNodeIndex, gradePost.TrItemId, gradePost.GradePct[0], gradePost.GradePct[1], gradePost.ForDistanceM[0], gradePost.ForDistanceM[1], gradePost.DistanceFromStartM, gradePost.TileX, gradePost.TileZ, gradePost.ItemName));
+                    cnt2++;
+                }
+                Debug.WriteLine(String.Format("Track-GradePostItem-Count: {0}", cnt2));
+            }
+#endif
         }
 
         public void SetActivity(string activityPath)

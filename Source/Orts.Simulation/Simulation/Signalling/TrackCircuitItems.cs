@@ -26,6 +26,7 @@ namespace Orts.Simulation.Signalling
         public Dictionary<SignalFunction, TrackCircuitSignalList>[] TrackCircuitSignals = new Dictionary<SignalFunction, TrackCircuitSignalList>[2];   // List of signals (per direction and per type) //
         public TrackCircuitSignalList[] TrackCircuitSpeedPosts = new TrackCircuitSignalList[2];            // List of speedposts (per direction) //
         public List<TrackCircuitMilepost> TrackCircuitMileposts = new List<TrackCircuitMilepost>();        // List of mileposts //
+        public List<TrackCircuitGradepost> TrackCircuitGradeposts = new List<TrackCircuitGradepost>();     // List of gradeposts; a gradpost has values for forward and reverse direction
 
 #if ACTIVITY_EDITOR
         // List of all Element coming from OR configuration in a generic form.

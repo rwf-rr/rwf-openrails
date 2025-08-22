@@ -14678,6 +14678,7 @@ namespace Orts.Simulation.Physics
         public List<TrainObjectItem>[] PlayerTrainSpeedposts; // 0 forward, 1 backward
         public List<TrainObjectItem>[,] PlayerTrainDivergingSwitches; // 0 forward, 1 backward; second index 0 facing, 1 trailing
         public List<TrainObjectItem>[] PlayerTrainMileposts; // 0 forward, 1 backward
+        public List<TrainObjectItem>[] PlayerTrainGradeposts; // 0 forward, 1 backward
         public List<TrainObjectItem>[] PlayerTrainTunnels; // 0 forward, 1 backward
 
         /// <summary>
@@ -14691,6 +14692,7 @@ namespace Orts.Simulation.Physics
                 PlayerTrainSpeedposts = new List<TrainObjectItem>[2];
                 PlayerTrainDivergingSwitches = new List<TrainObjectItem>[2, 2];
                 PlayerTrainMileposts = new List<TrainObjectItem>[2];
+                PlayerTrainGradeposts = new List<TrainObjectItem>[2];
                 PlayerTrainTunnels = new List<TrainObjectItem>[2];
                 for (int dir = 0; dir < 2; dir++)
                 {
@@ -14702,6 +14704,7 @@ namespace Orts.Simulation.Physics
                     for (int i = 0; i < 2; i++)
                         PlayerTrainDivergingSwitches[dir, i] = new List<TrainObjectItem>();
                     PlayerTrainMileposts[dir] = new List<TrainObjectItem>();
+                    PlayerTrainGradeposts[dir] = new List<TrainObjectItem>();
                     PlayerTrainTunnels[dir] = new List<TrainObjectItem>();
                 }
             }
@@ -14717,6 +14720,8 @@ namespace Orts.Simulation.Physics
                     playerTrainDivergingSwitchList?.Clear();
                 foreach (var playerTrainMilepostList in PlayerTrainMileposts)
                     playerTrainMilepostList?.Clear();
+                foreach (var playerTrainGradepostList in PlayerTrainGradeposts)
+                    playerTrainGradepostList?.Clear();
                 foreach (var playerTrainTunnelList in PlayerTrainTunnels)
                     playerTrainTunnelList?.Clear();
             }
@@ -14816,6 +14821,9 @@ namespace Orts.Simulation.Physics
                 var routePath = ValidRoute[dir];
                 var prevMilepostValue = -1f;
                 var prevMilepostDistance = -1f;
+                var prevGradepostValue = -1f;
+                var prevGradepostDistance = -1f;
+
                 while (index < routePath.Count && totalLength - lengthOffset < maxDistanceNORMALM)
                 {
                     var sectionDistanceToTrainM = totalLength - lengthOffset;
@@ -14983,6 +14991,28 @@ namespace Orts.Simulation.Physics
                         }
                     }
 
+                    // search for grade posts
+                    if (thisSection.CircuitItems.TrackCircuitGradeposts != null)
+                    {
+                        foreach (TrackCircuitGradepost thisGradepostItem in thisSection.CircuitItems.TrackCircuitGradeposts)
+                        {
+                            var gradepostDirection = sectionDirection == 1 ? 0 : 1;
+                            Gradepost thisGradepost = thisGradepostItem.GradepostRef;
+                            var distanceToTrainM = thisGradepostItem.GradepostLocation[gradepostDirection] + sectionDistanceToTrainM;
+                            if (distanceToTrainM < maxDistanceM)
+                            {
+                                if (!(distanceToTrainM - prevGradepostDistance < 50 && thisGradepost.GradePct[gradepostDirection] == prevGradepostValue) && distanceToTrainM > 0)
+                                {
+                                    thisItem = new TrainObjectItem(thisGradepost.GradePct[gradepostDirection], distanceToTrainM);
+                                    prevGradepostDistance = distanceToTrainM;
+                                    prevGradepostValue = thisGradepost.GradePct[gradepostDirection];
+                                    PlayerTrainGradeposts[dir].Add(thisItem);
+                                }
+                            }
+                            else break;
+                        }
+                    }
+
                     // search for tunnels
                     if (thisSection.TunnelInfo != null)
                     {
@@ -15131,6 +15161,13 @@ namespace Orts.Simulation.Physics
 
             // Add all mile posts within maximum distance
             foreach (TrainObjectItem thisTrainItem in PlayerTrainMileposts[0])
+            {
+                if (thisTrainItem.DistanceToTrainM <= maxDistanceM) thisInfo.ObjectInfoForward.Add(thisTrainItem);
+                else break;
+            }
+
+            // Add all grade posts within maximum distance
+            foreach (TrainObjectItem thisTrainItem in PlayerTrainGradeposts[0])
             {
                 if (thisTrainItem.DistanceToTrainM <= maxDistanceM) thisInfo.ObjectInfoForward.Add(thisTrainItem);
                 else break;
@@ -15311,6 +15348,13 @@ namespace Orts.Simulation.Physics
                     else break;
                 }
 
+                // Add all grade posts within maximum distance
+                foreach (TrainObjectItem thisTrainItem in PlayerTrainGradeposts[0])
+                {
+                    if (thisTrainItem.DistanceToTrainM <= maxDistanceM) thisInfo.ObjectInfoForward.Add(thisTrainItem);
+                    else break;
+                }
+
                 // Add all diverging switches within maximum distance
                 foreach (TrainObjectItem thisTrainItem in PlayerTrainDivergingSwitches[0, 0])
                 {
@@ -15353,6 +15397,13 @@ namespace Orts.Simulation.Physics
 
                 // Add all mile posts within maximum distance
                 foreach (TrainObjectItem thisTrainItem in PlayerTrainMileposts[1])
+                {
+                    if (thisTrainItem.DistanceToTrainM <= maxDistanceM) thisInfo.ObjectInfoBackward.Add(thisTrainItem);
+                    else break;
+                }
+
+                // Add all grade posts within maximum distance
+                foreach (TrainObjectItem thisTrainItem in PlayerTrainGradeposts[1])
                 {
                     if (thisTrainItem.DistanceToTrainM <= maxDistanceM) thisInfo.ObjectInfoBackward.Add(thisTrainItem);
                     else break;
@@ -21431,6 +21482,7 @@ namespace Orts.Simulation.Physics
                 TRAILING_SWITCH,
                 GENERIC_SIGNAL,
                 TUNNEL,
+                GRADEPOST,
             }
 
             public enum SpeedItemType
@@ -21452,6 +21504,7 @@ namespace Orts.Simulation.Physics
             public SpeedItemType SpeedObjectType;
             public bool Valid;
             public string ThisMile;
+            public float GradePct;
             public bool IsRightSwitch;
             public SignalObject SignalObject;
 
@@ -21593,6 +21646,17 @@ namespace Orts.Simulation.Physics
                 AllowedSpeedMpS = -1;
                 DistanceToTrainM = thisDistanceM;
                 ThisMile = thisMile;
+            }
+
+            // Constructor for Gradepost
+            public TrainObjectItem(float gradePct, float thisDistanceM)
+            {
+                ItemType = TRAINOBJECTTYPE.GRADEPOST;
+                AuthorityType = END_AUTHORITY.NO_PATH_RESERVED;
+                SignalState = TrackMonitorSignalAspect.Clear_2;
+                AllowedSpeedMpS = -1;
+                DistanceToTrainM = thisDistanceM;
+                GradePct = gradePct;
             }
 
             // Constructor for facing or trailing Switch

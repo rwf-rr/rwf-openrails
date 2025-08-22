@@ -165,14 +165,100 @@ namespace Orts.Formats.Msts
         }
 
         /// <summary>
+        /// Get the index of the vector node that precedes the specified vector node.
+        /// Expects to traverse a junction node to find the preceding vector node.
+        /// </summary>
+        /// <returns>The index of the incoming vector node, and the connected end if it.</returns>
+        // A Vector Node has a direction determined by the order of the vector sections.
+        // - Pin[0] is at the start (section[0]), Pin[1] is at the end (section[n]).
+        // - Pin Direction = 0 identifies that the vector node is connected to the trailing (out) side of a junction.
+        // - Pin Direction = 1 identifies that the vector node is connected to the leading (in) side of a junction.
+        // A Junction Node's direction is from the leading (in) side to the trailing (out) side. A typical Junction
+        // Node has one in Pin (at index 0) and two out Pins. The last out Pin seems to be the straight (primary)
+        // path.
+        // - Pin Direction = 0 indicates that the connected Vector Node is oriented towards the junction (ie. the
+        //   last vector section connects to the junction).
+        // - Pin Direction = 1 indicates that the connected Vector Node is oriented away from the junction (ie. the
+        //   first vector section connects to the junction).
+        public (int, int) GetIncomingVectorNodeIndex(TrackNode vectorNode)
+        {
+            int incomingVectorNodeIdx = -1;  // error
+            int incomingVectorNodeEnd = 0;
+
+            if (vectorNode == null || vectorNode.TrVectorNode == null || vectorNode.Inpins != 1)
+            {
+                Debug.Print("GetIncomingVectorNodeIndex() ERROR: source node is not a valid vector node");
+                return (-1, 0);  // error
+            }
+
+            int junctionNodeIdx = vectorNode.TrPins[0].Link;
+            if (junctionNodeIdx <= 0 || junctionNodeIdx >= TrackNodes.Length)
+            {
+                Debug.Print(String.Format("GetIncomingVectorNodeIndex() ERROR: first incoming node index {0} is out of range (1..{1})", junctionNodeIdx, TrackNodes.Length - 1));
+                return (-1, 0);  // error
+            }
+
+            TrackNode junctionNode = TrackNodes[junctionNodeIdx];
+
+            if (junctionNode.TrEndNode) { incomingVectorNodeIdx = 0; }  // there is no incoming vector node
+
+            else if (junctionNode.TrVectorNode != null)
+            {
+                Debug.Print(String.Format("GetIncomingVectorNodeIndex() WARNING: stitched vector nodes not expected; {0} - {1}", vectorNode.Index, junctionNode.Index));
+                incomingVectorNodeIdx = (int)junctionNode.Index;
+            }
+            else if (junctionNode.TrJunctionNode == null)
+            {
+                Debug.Print(String.Format("GetIncomingVectorNodeIndex() WARNING: expected a junction node, got a {1} for the first incoming node {0}", junctionNode.Index, junctionNode.GetType()));
+                incomingVectorNodeIdx = 0; // there is no incoming vector node
+            }
+            else
+            {
+                int pinIdx = 0;  // when connected to trailing side of junction, use in pin
+                if (vectorNode.TrPins[0].Direction != 0)
+                {
+                    // connected to leading (facing) side, use longer next vector node
+                    var out1 = junctionNode.TrPins.Length < 2 ? null : TrackNodes[junctionNode.TrPins[1].Link]?.TrVectorNode?.TrVectorSections;
+                    int l1 = out1 == null ? 0 : out1.Length;
+                    var out2 = junctionNode.TrPins.Length < 3 ? null : TrackNodes[junctionNode.TrPins[2].Link]?.TrVectorNode?.TrVectorSections;
+                    int l2 = out2 == null ? 0 : out2.Length;
+                    pinIdx = l1 >= l2 ? 1 : 2;
+                }
+                incomingVectorNodeIdx = junctionNode.TrPins[pinIdx].Link;
+                incomingVectorNodeEnd = junctionNode.TrPins[pinIdx].Direction == 0 ? 1 : 0;
+
+                if (incomingVectorNodeIdx <= 0 || incomingVectorNodeIdx >= TrackNodes.Length)
+                {
+                    Debug.Print(String.Format("GetIncomingVectorNodeIndex() ERROR: incoming node index {0} is out of range (1..{1})", incomingVectorNodeIdx, TrackNodes.Length - 1));
+                    return (-1, 0);  // error
+                }
+                else if (incomingVectorNodeIdx == vectorNode.Index)
+                {
+                    Debug.Print(String.Format("GetIncomingVectorNodeIndex() ERROR: incoming node index {0} same as query node {1} (circular)", incomingVectorNodeIdx, vectorNode.Index));
+                    return (-1, 0);  // error
+
+                }
+                else if (TrackNodes[incomingVectorNodeIdx].TrVectorNode == null)
+                {
+                    Debug.Print(String.Format("GetIncomingVectorNodeIndex() ERROR: incoming node index {0} is not a vector node (type {1})", incomingVectorNodeIdx, TrackNodes[incomingVectorNodeIdx].GetType()));
+                    return (-1, 0);  // error
+                }
+            }
+
+            return (incomingVectorNodeIdx, incomingVectorNodeEnd);
+        }
+
+        /// <summary>
         /// Add a number of TrItems (Track Items), created outside of the file, to the table of TrItems.
         /// This will also set the ID of the TrItems (since that gives the index in that array)
         /// </summary>
         /// <param name="newTrItems">The array of new items.</param>
+        /// <returns>The index of the first item added (ie. the size of the array before).</returns>
         [SuppressMessage("Microsoft.Naming", "CA1709:IdentifiersShouldBeCasedCorrectly", Justification = "Keeping identifier consistent to use in MSTS")]
-        public void AddTrItems(TrItem[] newTrItems)
+        public int AddTrItems(TrItem[] newTrItems)
         {
             TrItem[] newTrItemTable;
+            int firstInsertIdx = 0;
 
             if (TrItemTable == null)
             {
@@ -180,6 +266,7 @@ namespace Orts.Formats.Msts
             }
             else
             {
+                firstInsertIdx = TrItemTable.Length;
                 newTrItemTable = new TrItem[TrItemTable.Length + newTrItems.Length];
                 TrItemTable.CopyTo(newTrItemTable, 0);
             }
@@ -192,6 +279,7 @@ namespace Orts.Formats.Msts
             }
 
             TrItemTable = newTrItemTable;
+            return firstInsertIdx;
         }
 
         public void AddTrNodesToPointsOnApiMap(InfoApiMap infoApiMap)
@@ -660,6 +748,23 @@ namespace Orts.Formats.Msts
         /// <summary>The amount of TrItems in TrItemRefs</summary>
         public int NoItemRefs { get; set; } // it would have been better to use TrItemRefs.Length instead of keeping count ourselve
 
+        // to following members are calculated, not read from the file
+        public float LengthM;  // track length
+        public float[] GradePctAtEnd = new float[] { 0f, 0f };  // grade at each end [start, end]
+        public float[] GradeLengthMAtEnd = new float[] { 0f, 0f };  // length of steady grade at each end [start, end]
+        public float[] GradepostDistanceMAtEnd = new float[] { -1f, -1f };  // distance of the first grade marker at each end; -1 if none
+        public struct GradeData  // represents a segment of track with approx. the same grade, may span multiple vector sections
+        {
+            public float DistanceFromStartM;     // for debug
+            public float LengthM;     // length in meters
+            public float GradePct;    // grade in percent
+            public int TileX, TileZ;  // location of the start of this grade segment
+            public float X, Y, Z;
+            public GradeData(float distance, float length, float grade, int tileX, int tileZ, float x, float y, float z) { DistanceFromStartM = distance; LengthM = length; GradePct = grade; TileX = tileX; TileZ = tileZ; X = x; Y = y; Z = z; }
+        }
+        public List<GradeData> GradeList = new List<GradeData>();
+
+
         /// <summary>
         /// Default constructor used during file parsing.
         /// </summary>
@@ -736,10 +841,173 @@ namespace Orts.Formats.Msts
         public void AddTrItemRef(int newTrItemRef)
         {
             int[] newTrItemRefs = new int[NoItemRefs + 1];
-            TrItemRefs.CopyTo(newTrItemRefs, 0);
+            TrItemRefs?.CopyTo(newTrItemRefs, 0);
             newTrItemRefs[NoItemRefs] = newTrItemRef;
             TrItemRefs = newTrItemRefs; //use the new item lists for the track node
             NoItemRefs++;
+        }
+
+        /// <summary>
+        /// Add a list of new TrItem references to the TrItemRefs.
+        /// </summary>
+        /// <param name="newTrItemRef">The reference to the new TrItem</param>
+        [SuppressMessage("Microsoft.Naming", "CA1709:IdentifiersShouldBeCasedCorrectly", Justification = "Keeping identifier consistent to use in MSTS")]
+        public void AddTrItemRef(int startIndex, TrItem[] trItems)
+        {
+            int numNew = trItems.Length - startIndex;
+
+            // create a new array and copy old refs
+            var newTrItemRefs = new int[NoItemRefs + numNew];
+            TrItemRefs?.CopyTo(newTrItemRefs, 0);
+
+            // set refs for added items
+            for (int refIdx = NoItemRefs, itemIdx = startIndex; refIdx < newTrItemRefs.Length && itemIdx < trItems.Length; refIdx++, itemIdx++)
+                newTrItemRefs[refIdx] = (int)trItems[itemIdx].TrItemId;
+            
+            // set vector node to use new array
+            TrItemRefs = newTrItemRefs;
+            NoItemRefs = TrItemRefs.Length;
+        }
+
+        /// <summary>
+        /// Add grade info to the track vector node. Traverse the track sections and build a grade profile.
+        /// Sections with approximately the same grade are combined.
+        /// </summary>
+        //  length and grade calc taken from TrackViewer, PathChartData.cs, AddPointAndTrackItems(), GetCurvature(), SectionLengthAlongTrack()
+        public void AddGradeInfo(uint vectorNodeIdx, TrackSections trackSections)
+        {
+            if (TrVectorSections != null && TrVectorSections.Length > 0)
+            {
+                // handle first section; start a new grade segment
+                TrVectorSection firstVS = TrVectorSections[0];
+                TrackSection firstTS = trackSections[firstVS.SectionIndex];
+                float firstLength = firstTS.SectionCurve != null ? MathHelper.ToRadians(Math.Abs(firstTS.SectionCurve.Angle)) * firstTS.SectionCurve.Radius : firstTS.SectionSize.Length;
+                float firstGrade = firstVS.AX * -100f;
+                GradeData gradeItem = new GradeData(0f, firstLength, firstGrade, firstVS.TileX, firstVS.TileZ, firstVS.X, firstVS.Y, firstVS.Z);
+                float distanceFromStartM = firstLength;
+
+                for (int vsIdx = 1; vsIdx < TrVectorSections.Length; vsIdx++)
+                {
+                    TrVectorSection vs = TrVectorSections[vsIdx];
+                    TrackSection ts = trackSections[vs.SectionIndex];
+                    float length = ts.SectionCurve != null ? MathHelper.ToRadians(Math.Abs(ts.SectionCurve.Angle)) * ts.SectionCurve.Radius : ts.SectionSize.Length;
+                    float grade = vs.AX * -100f;
+
+                    if (length < 0.01f) { continue; }  // ignore very short sections (and division by zero)
+
+                    // if less than one promille change, combine with previous section
+                    if (Math.Abs(grade - gradeItem.GradePct) < 0.1)
+                    {
+                        gradeItem.GradePct = (gradeItem.LengthM > 0f) ? (gradeItem.GradePct * gradeItem.LengthM + grade * length) / (gradeItem.LengthM + length) : grade;
+                        gradeItem.LengthM += length;
+                    }
+                    else
+                    {
+                        // save the current segment and start a new one with this section
+                        if (gradeItem.LengthM > 0)
+                        {
+                            GradeList.Add(gradeItem);
+                        }
+                        gradeItem = new GradeData(distanceFromStartM, length, grade, vs.TileX, vs.TileZ, vs.X, vs.Y, vs.Z);
+                    }
+
+                    distanceFromStartM += length;
+                    this.LengthM += length;  // sum the length of the vector section
+                }
+
+                // save the final segment
+                if (gradeItem.LengthM > 0)
+                {
+                    GradeList.Add(gradeItem);
+                }
+            }
+
+            if (GradeList.Count > 0)
+            {
+                GradePctAtEnd[0] = GradeList[0].GradePct;
+                GradeLengthMAtEnd[0] = GradeList[0].LengthM;
+                GradePctAtEnd[1] = GradeList[GradeList.Count - 1].GradePct;
+                GradeLengthMAtEnd[1] = GradeList[GradeList.Count - 1].LengthM;
+            }
+        }
+
+        /// <summary>
+        /// Process the grade info in the vector node, to determine where gradeposts should be placed.
+        /// Then create the gradeposts and add them to the vector node's existing list of track items.
+        /// </summary>
+        // Ensure that not too many gradeposts are created, as that would crowd the track monitor.
+        public void ProcessGradeInfoAndAddGradeposts(uint vectorNodeIdx, TrackDB trackDB)
+        {
+            const float minDistanceBetweenMakersM = 200f;
+
+            if (GradeList.Count < 2) { return; /* for now we need at least two grades */ }  // TODO: handle first and last grade data
+
+            TrackNode trackNode = trackDB.TrackNodes[vectorNodeIdx];
+
+#if false
+            float currentDistanceFromStartM = 0f;
+            float precedingGradePct = 0f;
+            float precedingGradeLengthM = 0f;
+            float firstGradepostAt = -1f;
+            float lastGradepostAt = -1f;
+
+            int precedingVectorNodeIdx, precedingVectorNodeEnd;
+            (precedingVectorNodeIdx, precedingVectorNodeEnd) = trackDB.GetIncomingVectorNodeIndex(trackNode);
+            if (precedingVectorNodeIdx > 0)
+            {
+                TrVectorNode precedingVectorNode = trackDB.TrackNodes[precedingVectorNodeIdx].TrVectorNode;
+                precedingGradePct = precedingVectorNode.GradePctAtEnd[precedingVectorNodeEnd];
+                precedingGradeLengthM = precedingVectorNode.GradeLengthMAtEnd[precedingVectorNodeEnd];
+            }
+#endif
+            float precedingGradePct = GradeList[0].GradePct;
+            float precedingGradeLengthM = GradeList[0].LengthM;
+            float currentDistanceFromStartM = GradeList[0].LengthM;
+            List<TrItem> newTrItems = new List<TrItem>();
+
+            for (int gradeIdx = 1; gradeIdx < GradeList.Count; gradeIdx++)
+            {
+                GradeData gradeInfo = GradeList[gradeIdx];
+
+                float absGradeDiff = Math.Abs(precedingGradePct - gradeInfo.GradePct);
+
+                if (absGradeDiff < 0.1f)
+                {
+                    // for now just accumulate; later update the length of the preeding grade post
+                    precedingGradeLengthM += gradeInfo.LengthM;
+                }
+
+                // else if there are long stretches before and after the change, create a marker
+                else if (precedingGradeLengthM > minDistanceBetweenMakersM && gradeInfo.LengthM > minDistanceBetweenMakersM)
+                {
+                    var newItem = new GradePostItem(currentDistanceFromStartM, gradeInfo.GradePct, precedingGradePct * -1, gradeInfo.LengthM, precedingGradeLengthM, gradeInfo.TileX, gradeInfo.TileZ, gradeInfo.X, gradeInfo.Y, gradeInfo.Z);
+                    newItem.TrackNodeIndex = vectorNodeIdx;
+                    newItem.ItemName = String.Format("Calculated Grade in TrackNode {0} at distance {1}: grade {2:F2}/{3:F2} for {4:F1}/{5:F1}",
+                        vectorNodeIdx, currentDistanceFromStartM, newItem.GradePct[0], newItem.GradePct[1], newItem.ForDistanceM[0], newItem.ForDistanceM[1]);  // for debug
+                    newTrItems.Add(newItem);
+
+                    precedingGradePct = gradeInfo.GradePct;
+                    precedingGradeLengthM = gradeInfo.LengthM;
+                }
+
+                // else undulating
+                else
+                {
+                    // TODO
+
+                    precedingGradePct = gradeInfo.GradePct;
+                    precedingGradeLengthM = gradeInfo.LengthM;
+                }
+
+                currentDistanceFromStartM += gradeInfo.LengthM;
+            }
+
+            // append new items to the Track DB's TrItemTable, and update references
+            if (newTrItems.Count > 0)
+            {
+                int firstInsertIdx = trackDB.AddTrItems(newTrItems.ToArray());
+                AddTrItemRef(firstInsertIdx, trackDB.TrItemTable);
+            }
         }
     }
 
@@ -890,7 +1158,9 @@ namespace Orts.Formats.Msts
             /// <summary>A pickup of fuel, water, ...</summary>
             trPICKUP,
             /// <summary>The place where cars are appear of disappear</summary>
-            trCARSPAWNER
+            trCARSPAWNER,
+            /// <summary>A post indicating the grade of the track ahead</summary>  // TODO: Should mileposts be here instead of speed posts?
+            trGRADEPOST
         }
 
         /// <summary>Type of track item</summary>
@@ -1515,6 +1785,50 @@ namespace Orts.Formats.Msts
                 new STFReader.TokenProcessor("tritempdata", ()=>{ TrItemPData(stf); }),
 
             });
+        }
+    }
+
+    /// <summary>
+    /// Represents a grade post, indicating the grade of the section ahead.
+    /// </summary>
+    // Initially these are calculated from the track profile. In the future, placing 
+    // grade markers (or plates) with the track may be supported. 
+    public class GradePostItem : TrItem
+    {
+        /// <summary>Grade in percent. Index 0 is in track direction, index 1 is reverse.</summary>
+        public float[] GradePct = new float[2];
+        /// <summary>Distance (in meters) for which the grade applies. Index 0 is in track direction, index 1 is reverse.</summary>
+        public float[] ForDistanceM = new float[2];
+        /// <summary>Distance of the grade post from the start of the track node.</summary>
+        public float DistanceFromStartM;
+
+        // fields not read from file, set in post-processing
+        /// <summary>Set post construction. Reference (index) to the Track Node the grade post belongs to.</summary>
+        public uint TrackNodeIndex;
+        /// <summary>Set post construction. Reference to TrackCircuitGradepost (in signals).</summary>
+        public int SigObj;  // TODO:  rename, as it is not really a signalling object referenc; was copied from speed post
+
+        /// <summary>
+        /// Default constructor used during file parsing.
+        /// </summary>
+        /// <param name="stf">The STFreader containing the file stream</param>
+        /// <param name="idx">The index of this TrItem in the list of TrItems</param>
+        public GradePostItem(STFReader stf, int idx)
+        {
+            Trace.TraceWarning("GradePostItem(STFReader stf, int idx) is not implemented. Placeholder for future.");
+        }
+
+        /// <summary>
+        /// Create a Grade Marker (Post) based on grade info from the track profile.
+        /// </summary>
+        public GradePostItem(float distFromStart, float forwardGrade, float reverseGrade, float forwardDist, float reverseDist, int tileX, int tileZ, float x, float y, float z)
+        {
+            ItemType = trItemType.trGRADEPOST;
+            DistanceFromStartM = distFromStart;
+            GradePct[0] = forwardGrade; GradePct[1] = reverseGrade;
+            ForDistanceM[0] = forwardDist; ForDistanceM[1] = reverseDist;
+            TileX = tileX; TileZ = tileZ;
+            X = x; Y = y; Z = z;
         }
     }
 
