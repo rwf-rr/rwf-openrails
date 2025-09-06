@@ -262,6 +262,7 @@ namespace Orts.Simulation.AIs
         public WorldLocation Location;      // coordinates for this path node
         public int JunctionIndex = -1;      // index of junction node, -1 if none
         public bool IsFacingPoint;          // true if this node entered from the facing point end
+        public bool IsIntermediateNode;     // true if the path node is an intermediate node within a vector node
         //public bool IsLastSwitchUse;        //true if this node is last to touch a switch
         public bool IsVisited;              // true if the train has visited this node
 
@@ -300,6 +301,7 @@ namespace Orts.Simulation.AIs
             Location = otherNode.Location;
             JunctionIndex = otherNode.JunctionIndex;
             IsFacingPoint = otherNode.IsFacingPoint;
+            IsIntermediateNode = otherNode.IsIntermediateNode;
             IsVisited = otherNode.IsVisited;
         }
 
@@ -318,6 +320,8 @@ namespace Orts.Simulation.AIs
         // in principle it would be more logical to have it in PATfile.cs. But this leads to too much code duplication
         private void InterpretPathNodeFlags(TrPathNode tpn, TrackPDP pdp, bool isTimetableMode)
         {
+            if ((tpn.pathFlags & 04) != 0) IsIntermediateNode = true;
+
             if ((tpn.pathFlags & 03) == 0) return;
             // Bit 0 and/or bit 1 is set.
 
@@ -386,6 +390,7 @@ namespace Orts.Simulation.AIs
             NextSidingTVNIndex = inf.ReadInt32();
             JunctionIndex = inf.ReadInt32();
             IsFacingPoint = inf.ReadBoolean();
+            IsIntermediateNode = inf.ReadBoolean();
             Location = new WorldLocation();
             Location.TileX = inf.ReadInt32();
             Location.TileZ = inf.ReadInt32();
@@ -407,6 +412,7 @@ namespace Orts.Simulation.AIs
             outf.Write(NextSidingTVNIndex);
             outf.Write(JunctionIndex);
             outf.Write(IsFacingPoint);
+            outf.Write(IsIntermediateNode);
             outf.Write(Location.TileX);
             outf.Write(Location.TileZ);
             outf.Write(Location.Location.X);
