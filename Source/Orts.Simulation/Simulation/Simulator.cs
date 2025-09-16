@@ -340,7 +340,11 @@ namespace Orts.Simulation
             // create grade markers from the grade info in the vector nodes
             foreach (var trackNode in TDB.TrackDB.TrackNodes)
             {
-                if (trackNode?.TrVectorNode != null) { trackNode.TrVectorNode.ProcessForwardGradeInfoAndAddGradeposts(trackNode.Index, TDB.TrackDB); }
+                if (trackNode?.TrVectorNode != null)
+                {
+                    trackNode.TrVectorNode.ProcessForwardGradeInfoAndAddGradeposts(trackNode.Index, TDB.TrackDB);
+                    trackNode.TrVectorNode.ProcessReverseGradeInfoAndAddGradeposts(trackNode.Index, TDB.TrackDB);
+                }
             }
 
 #if DEBUG
@@ -422,8 +426,8 @@ namespace Orts.Simulation
                 {
                     if (!(trItem is GradePostItem)) continue;
                     GradePostItem gradePost = (GradePostItem)trItem;
-                    Debug.WriteLine(String.Format("Track-GradePostItem: TrackNode = {0}, TrItemId = {1}, grade = {2:F2}/{3:F2}, for = {4:F1}/{5:F1}, distance = {6:F1}, TX = {7}, TZ = {8}, name = {9}",
-                        gradePost.TrackNodeIndex, gradePost.TrItemId, gradePost.GradePct[0], gradePost.GradePct[1], gradePost.ForDistanceM[0], gradePost.ForDistanceM[1], gradePost.DistanceFromStartM, gradePost.TileX, gradePost.TileZ, gradePost.ItemName));
+                    Debug.WriteLine(String.Format("Track-GradePostItem: TrackNode = {0}, TrItemId = {1}, grade = {2:F2}, for = {3:F1}, distance = {4:F1}, direction {5}, TX = {6}, TZ = {7}, name = {8}",
+                        gradePost.TrackNodeIndex, gradePost.TrItemId, gradePost.GradePct, gradePost.ForDistanceM, gradePost.DistanceFromStartM, gradePost.Direction, gradePost.TileX, gradePost.TileZ, gradePost.ItemName));
                     cnt2++;
                 }
                 Debug.WriteLine(String.Format("Track-GradePostItem-Count: {0}", cnt2));
@@ -1474,7 +1478,7 @@ namespace Orts.Simulation
 
 #if DEBUG
             // dump path, for now just grade posts
-            float distanceFromPathStart = 0;
+            float distanceFromPathStart = 0f;  // does not account for offset of path start
             int maxNodes = aiPath.Nodes.Count;  // limit, in case there is a loop
             AIPathNode currentPathNode = aiPath.FirstNode;
             while (currentPathNode != null && maxNodes >= 0)
@@ -1485,62 +1489,35 @@ namespace Orts.Simulation
                     int tvnIdx = currentPathNode.NextMainTVNIndex;
                     if (tvnIdx > 0)
                     {
-                        TrVectorNode trackVectorNode = TDB.TrackDB.TrackNodes[tvnIdx].TrVectorNode;
+                        TrackNode trackNode = TDB.TrackDB.TrackNodes[tvnIdx];
+                        TrVectorNode vectorNode = trackNode.TrVectorNode;
 
-                        int forward = 0; int backward = 1;
-                        if (currentPathNode.JunctionIndex > 0)
-                        {
-                            if (TDB.TrackDB.TrackNodes[tvnIdx].TrPins[1].Link == currentPathNode.JunctionIndex)
-                            {
-                                forward = 1; backward = 0;
-                            }
-                        }
-                        else if (currentPathNode.NextMainNode.JunctionIndex > 0)
-                        {
-                            if (TDB.TrackDB.TrackNodes[tvnIdx].TrPins[0].Link == currentPathNode.NextMainNode.JunctionIndex)
-                            {
-                                forward = 1; backward = 0;
-                            }
-                        }
+                        int trackDirection = 0;
+                        if (currentPathNode.JunctionIndex > 0 && trackNode.TrPins[1].Link == currentPathNode.JunctionIndex) { trackDirection = 1; }
+                        else if (currentPathNode.NextMainNode.JunctionIndex > 0 && trackNode.TrPins[0].Link == currentPathNode.NextMainNode.JunctionIndex) { trackDirection = 1; }
 
                         // for now assuming that gradeposts (their refs) are in distance order
                         bool foundGradepost = false;
-                        if (forward == 0)
+                        for (int refIdx = 0; refIdx < vectorNode.NoItemRefs; refIdx++)
                         {
-                            for (int refIdx = 0; refIdx < trackVectorNode.NoItemRefs; refIdx++)
+                            int trItemIdx = vectorNode.TrItemRefs[refIdx];
+                            TrItem item = TDB.TrackDB.TrItemTable[trItemIdx];
+                            if (item is GradePostItem)
                             {
-                                int trItemIdx = trackVectorNode.TrItemRefs[refIdx];
-                                TrItem item = TDB.TrackDB.TrItemTable[trItemIdx];
-                                if (item is GradePostItem)
+                                GradePostItem gpItem = (GradePostItem)item;
+                                if (gpItem.Direction == trackDirection)
                                 {
-                                    GradePostItem gpItem = (GradePostItem)item;
                                     float distanceInNode = gpItem.DistanceFromStartM;
-                                    Debug.WriteLine("Gradepost: TrackNodeIdx {0}, RefIdx {1}, ItemIdx {2}, fromPathStart {3:F0}, fromNodeStart {4:F0}, fwdGrade {5:F1}, fwdLength {6:F0}, revGrade {7:F1}, revLength {8:F0}",
-                                        gpItem.TrackNodeIndex, refIdx, gpItem.TrItemId, distanceFromPathStart + distanceInNode, distanceInNode, gpItem.GradePct[forward], gpItem.ForDistanceM[forward], gpItem.GradePct[backward], gpItem.ForDistanceM[backward]);
-                                    foundGradepost = true;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            for (int refIdx = trackVectorNode.NoItemRefs - 1; refIdx >= 0; refIdx--)
-                            {
-                                int trItemIdx = trackVectorNode.TrItemRefs[refIdx];
-                                TrItem item = TDB.TrackDB.TrItemTable[trItemIdx];
-                                if (item is GradePostItem)
-                                {
-                                    GradePostItem gpItem = (GradePostItem)item;
-                                    float distanceInNode = trackVectorNode.LengthM - gpItem.DistanceFromStartM;
-                                    Debug.WriteLine("Gradepost: TrackNodeIdx {0}, RefIdx {1}, ItemIdx {2}, fromPathStart {3:F0}, fromNodeStart {4:F0}, fwdGrade {5:F1}, fwdLength {6:F0}, revGrade {7:F1}, revLength {8:F0}",
-                                        gpItem.TrackNodeIndex, refIdx, gpItem.TrItemId, distanceFromPathStart + distanceInNode, distanceInNode, gpItem.GradePct[forward], gpItem.ForDistanceM[forward], gpItem.GradePct[backward], gpItem.ForDistanceM[backward]);
+                                    Debug.WriteLine("TrainInit-Gradepost: TrackNodeIdx {0}, RefIdx {1}, ItemIdx {2}, estFromPathStart {3:F0}, fromNodeStart {4:F0}, grade {5:F1}, length {6:F0}",
+                                        gpItem.TrackNodeIndex, refIdx, gpItem.TrItemId, distanceFromPathStart + distanceInNode, distanceInNode, gpItem.GradePct, gpItem.ForDistanceM);
                                     foundGradepost = true;
                                 }
                             }
                         }
 
-                        if (!foundGradepost) { Debug.WriteLine("Gradepost: TrackNode {0}, no gradeposts in {1} items", tvnIdx, trackVectorNode.NoItemRefs); }
+                        if (!foundGradepost) { Debug.WriteLine("Gradepost: TrackNode {0}, no gradeposts in {1} items", tvnIdx, vectorNode.NoItemRefs); }
 
-                        distanceFromPathStart += trackVectorNode.LengthM;
+                        distanceFromPathStart += vectorNode.LengthM;
                     }
                 }
 

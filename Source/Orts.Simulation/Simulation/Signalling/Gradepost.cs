@@ -36,19 +36,22 @@ namespace Orts.Simulation.Signalling
         public int TCReference = -1;  // undefined
         /// <summary>Position within TrackCircuit. Distance im meters?</summary>
         public float TCOffset;
-        /// <summary>Grade in percent. Index 0 is in track circuit direction, index 1 is in reverse direction</summary>
-        public float[] GradePct = new float[2];
-        /// <summary>Distance in meters for which the grade applies. Index 0 is in track circuit direction, index 1 is in reverse direction.</summary>
-        public float[] ForDistanceM = new float[2];
+        /// <summary>Grade in percent.</summary>
+        public float GradePct;
+        /// <summary>Distance in meters for which the grade applies.</summary>
+        public float ForDistanceM;
+        /// <summary>The direction in which the grade applies. 0 is in track circuit direction, 1 is in reverse direction.</summary>
+        public int Direction;
         /// <summary>Reference to TrackNode; index into TrackDB.TrackNodes.</summary>
         public int TrackNodeIdx;
 
         /// <summary>Constructor with base attributes.</summary>
-        public Gradepost(uint trItemId, float forwardGradePct, float reverseGradePct, float forwardDistanceM, float reverseDistanceM)
+        public Gradepost(uint trItemId, float gradePct, float distanceM, int dir)
         {
             TrItemId = trItemId;
-            GradePct[0] = forwardGradePct; GradePct[1] = reverseGradePct;
-            ForDistanceM[0] = forwardDistanceM; ForDistanceM[1] = reverseDistanceM;
+            GradePct = gradePct;
+            ForDistanceM = distanceM;
+            Direction = dir;
         }
 
         /// <summary>Dummy constructor</summary>

@@ -164,24 +164,29 @@ namespace Orts.Formats.Msts
             throw new InvalidOperationException("Program Bug: Can't Find Track Node");
         }
 
+        // Note on how vector nodes connect:
+        // A Vector Node has a direction determined by the order of the vector sections.
+        //  - Pin[0] is at the start (section[0]), Pin[1] is at the end (section[n-1]).
+        //  - Pin Direction = 0 identifies that the vector node is connected to the trailing (out) side of a junction.
+        //  - Pin Direction = 1 identifies that the vector node is connected to the leading (in) side of a junction.
+        // A Junction Node's direction is from the leading (in) side to the trailing (out) side.
+        //  - A typical Junction Node has one in Pin (at index 0) and two out Pins. Either out pin may be the straight
+        //    (primary) path.
+        //  - Pin Direction = 0 indicates that the connected Vector Node is oriented towards the junction (ie. the
+        //    last vector section connects to the junction).
+        //  - Pin Direction = 1 indicates that the connected Vector Node is oriented away from the junction (ie. the
+        //    first vector section connects to the junction).
+
         /// <summary>
         /// Get the index of the vector node that precedes the specified vector node.
         /// Expects to traverse a junction node to find the preceding vector node.
         /// </summary>
         /// <returns>The index of the incoming vector node, and the connected end if it.</returns>
-        // A Vector Node has a direction determined by the order of the vector sections.
-        // - Pin[0] is at the start (section[0]), Pin[1] is at the end (section[n]).
-        // - Pin Direction = 0 identifies that the vector node is connected to the trailing (out) side of a junction.
-        // - Pin Direction = 1 identifies that the vector node is connected to the leading (in) side of a junction.
-        // A Junction Node's direction is from the leading (in) side to the trailing (out) side. A typical Junction
-        // Node has one in Pin (at index 0) and two out Pins. The last out Pin seems to be the straight (primary)
-        // path.
-        // - Pin Direction = 0 indicates that the connected Vector Node is oriented towards the junction (ie. the
-        //   last vector section connects to the junction).
-        // - Pin Direction = 1 indicates that the connected Vector Node is oriented away from the junction (ie. the
-        //   first vector section connects to the junction).
-        public (int, int) GetIncomingVectorNodeIndex(TrackNode vectorNode)
+        public (int, int) GetIncomingVectorNodeIndex(TrackNode vectorNode, int direction)
         {
+            const int connectedToTrailingSide = 0;  // re: direction of vector node link to junction
+
+            int inPinIdx = direction == 0 ? 0 : 1;
             int incomingVectorNodeIdx = -1;  // error
             int incomingVectorNodeEnd = 0;
 
@@ -191,7 +196,7 @@ namespace Orts.Formats.Msts
                 return (-1, 0);  // error
             }
 
-            int junctionNodeIdx = vectorNode.TrPins[0].Link;
+            int junctionNodeIdx = vectorNode.TrPins[inPinIdx].Link;
             if (junctionNodeIdx <= 0 || junctionNodeIdx >= TrackNodes.Length)
             {
                 Debug.Print(String.Format("GetIncomingVectorNodeIndex() ERROR: first incoming node index {0} is out of range (1..{1})", junctionNodeIdx, TrackNodes.Length - 1));
@@ -215,7 +220,7 @@ namespace Orts.Formats.Msts
             else
             {
                 int pinIdx = 0;  // when connected to trailing side of junction, use in pin
-                if (vectorNode.TrPins[0].Direction != 0)
+                if (vectorNode.TrPins[inPinIdx].Direction != connectedToTrailingSide)
                 {
                     // connected to leading (facing) side, use longer next vector node
                     var out1 = junctionNode.TrPins.Length < 2 ? null : TrackNodes[junctionNode.TrPins[1].Link]?.TrVectorNode?.TrVectorSections;
@@ -246,6 +251,82 @@ namespace Orts.Formats.Msts
             }
 
             return (incomingVectorNodeIdx, incomingVectorNodeEnd);
+        }
+
+        /// <summary>
+        /// Get the index of the vector node that follows the specified vector node.
+        /// Expects to traverse a junction node to find the next vector node.
+        /// </summary>
+        /// <returns>The index of the outgoing vector node, and the connected end if it.</returns>
+        public (int, int) GetOutgoingVectorNodeIndex(TrackNode vectorNode, int direction)
+        {
+            const int connectedToTrailingSide = 0;  // re: direction of vector node link to junction
+
+            int outPinIdx = direction == 0 ? 0 : 1;
+            int outgoingVectorNodeIdx = -1;  // error
+            int outgoingVectorNodeEnd = 0;
+
+            if (vectorNode == null || vectorNode.TrVectorNode == null || vectorNode.Inpins != 1)
+            {
+                Debug.Print("GetOutgoingVectorNodeIndex() ERROR: source node is not a valid vector node");
+                return (-1, 0);  // error
+            }
+
+            int junctionNodeIdx = vectorNode.TrPins[outPinIdx].Link;
+            if (junctionNodeIdx <= 0 || junctionNodeIdx >= TrackNodes.Length)
+            {
+                Debug.Print(String.Format("GetOutgoingVectorNodeIndex() ERROR: first outgoing node index {0} is out of range (1..{1})", junctionNodeIdx, TrackNodes.Length - 1));
+                return (-1, 0);  // error
+            }
+
+            TrackNode junctionNode = TrackNodes[junctionNodeIdx];
+
+            if (junctionNode.TrEndNode) { outgoingVectorNodeIdx = 0; }  // there is no outgoing vector node
+
+            else if (junctionNode.TrVectorNode != null)
+            {
+                Debug.Print(String.Format("GetOutgoingVectorNodeIndex() WARNING: stitched vector nodes not expected; {0} - {1}", vectorNode.Index, junctionNode.Index));
+                outgoingVectorNodeIdx = (int)junctionNode.Index;
+            }
+            else if (junctionNode.TrJunctionNode == null)
+            {
+                Debug.Print(String.Format("GetOutgoingVectorNodeIndex() WARNING: expected a junction node, got a {1} for the first outgoing node {0}", junctionNode.Index, junctionNode.GetType()));
+                outgoingVectorNodeIdx = 0; // there is no incoming vector node
+            }
+            else
+            {
+                int pinIdx = 0;  // when connected to trailing side of junction, use in pin
+                if (vectorNode.TrPins[outPinIdx].Direction != connectedToTrailingSide)
+                {
+                    // connected to leading (facing) side, use longer next vector node
+                    var out1 = junctionNode.TrPins.Length < 2 ? null : TrackNodes[junctionNode.TrPins[1].Link]?.TrVectorNode?.TrVectorSections;
+                    int l1 = out1 == null ? 0 : out1.Length;
+                    var out2 = junctionNode.TrPins.Length < 3 ? null : TrackNodes[junctionNode.TrPins[2].Link]?.TrVectorNode?.TrVectorSections;
+                    int l2 = out2 == null ? 0 : out2.Length;
+                    pinIdx = l1 >= l2 ? 1 : 2;
+                }
+                outgoingVectorNodeIdx = junctionNode.TrPins[pinIdx].Link;
+                outgoingVectorNodeEnd = junctionNode.TrPins[pinIdx].Direction == 0 ? 1 : 0;
+
+                if (outgoingVectorNodeIdx <= 0 || outgoingVectorNodeIdx >= TrackNodes.Length)
+                {
+                    Debug.Print(String.Format("GetOutgoingVectorNodeIndex() ERROR: outgoing node index {0} is out of range (1..{1})", outgoingVectorNodeIdx, TrackNodes.Length - 1));
+                    return (-1, 0);  // error
+                }
+                else if (outgoingVectorNodeIdx == vectorNode.Index)
+                {
+                    Debug.Print(String.Format("GetOutgoingVectorNodeIndex() ERROR: outgoing node index {0} same as query node {1} (circular)", outgoingVectorNodeIdx, vectorNode.Index));
+                    return (-1, 0);  // error
+
+                }
+                else if (TrackNodes[outgoingVectorNodeIdx].TrVectorNode == null)
+                {
+                    Debug.Print(String.Format("GetOutgoingVectorNodeIndex() ERROR: outgoing node index {0} is not a vector node (type {1})", outgoingVectorNodeIdx, TrackNodes[outgoingVectorNodeIdx].GetType()));
+                    return (-1, 0);  // error
+                }
+            }
+
+            return (outgoingVectorNodeIdx, outgoingVectorNodeEnd);
         }
 
         /// <summary>
@@ -753,7 +834,9 @@ namespace Orts.Formats.Msts
         public float[] GradePctAtEnd = new float[] { 0f, 0f };  // grade at each end [start, end]
         public float[] GradeLengthMAtEnd = new float[] { 0f, 0f };  // length of steady grade at each end [start, end]
         public float[] GradepostDistanceMAtEnd = new float[] { -1f, -1f };  // distance of the first grade marker at each end; -1 if none
-        public GradePostItem[] GradepostNearestEnd = new GradePostItem[2];  // gradepost nearest to the start and end of the vector node
+        public GradePostItem[] FirstGradePost = new GradePostItem[2];  // first gradepost in each direction; 0 = in track node direction, 1 = in reverse direction
+        public GradePostItem[] LastGradePost = new GradePostItem[2];  // last gradepost in each direction; 0 = in track node direction, 1 = in reverse direction
+
         public struct GradeData  // represents a segment of track with approx. the same grade, may span multiple vector sections
         {
             public float DistanceFromStartM;     // for debug
@@ -871,39 +954,14 @@ namespace Orts.Formats.Msts
         }
 
         /// <summary>
-        /// Check if there is a long segment of the same grade ahead.
-        /// </summary>
-        private bool SameGradeAhead( float maxDistanceM, float currentGrade, float currentLength, int currentIndex, TrackSections trackSections)
-        {
-            float inBetweenLength = currentLength;
-            bool foundSameGrade = false;
-            for (int idx = currentIndex + 1; idx < TrVectorSections.Length && inBetweenLength < maxDistanceM && !foundSameGrade; idx++)
-            {
-                TrVectorSection vs = TrVectorSections[idx];
-                TrackSection ts = trackSections[vs.SectionIndex];
-                float length = ts.SectionCurve != null ? MathHelper.ToRadians(Math.Abs(ts.SectionCurve.Angle)) * ts.SectionCurve.Radius : ts.SectionSize.Length;
-                float grade = vs.AX * -100f;
-
-                if (Math.Abs(grade - currentGrade) < 0.1 && length > inBetweenLength)
-                {
-                    foundSameGrade = true;
-                }
-            }
-            return foundSameGrade;
-        }
-
-        /// <summary>
         /// Add grade info to the track vector node. Traverse the track sections and build a grade profile.
         /// Sections with approximately the same grade are combined.
         /// </summary>
         //  length and grade calc taken from TrackViewer, PathChartData.cs, AddPointAndTrackItems(), GetCurvature(), SectionLengthAlongTrack()
-        public void AddGradeInfo(uint vectorNodeIdx, TrackSections trackSections, /* for debug*/ int tvsZeroLenCnt)
+        public void AddGradeInfo(uint vectorNodeIdx, TrackSections trackSections, /* for debug */ int tvsZeroLenCnt)
         {
             if (TrVectorSections != null && TrVectorSections.Length > 0)
             {
-                const float minGradeItemLengthM = 30f;
-                const float medGradeItemLengthM = 70f;
-
                 // handle first section; start a new grade segment
                 TrVectorSection firstVS = TrVectorSections[0];
                 TrackSection firstTS = trackSections[firstVS.SectionIndex];
@@ -912,27 +970,7 @@ namespace Orts.Formats.Msts
                 GradeData gradeItem = new GradeData(0f, firstLength, firstGrade, firstVS.TileX, firstVS.TileZ, firstVS.X, firstVS.Y, firstVS.Z);
                 float distanceFromStartM = firstLength;
 
-                int startIdx = 1; int endIndex = TrVectorSections.Length - 1;
-
-#if tru
-                // if the first section is short and the next section is long, start with the long section
-                if (gradeItem.LengthM < minGradeItemLengthM && endIndex >= 1)
-                {
-                    TrVectorSection nextVS = TrVectorSections[1];
-                    TrackSection nextTS = trackSections[nextVS.SectionIndex];
-                    float nextLength = nextTS.SectionCurve != null ? MathHelper.ToRadians(Math.Abs(nextTS.SectionCurve.Angle)) * nextTS.SectionCurve.Radius : nextTS.SectionSize.Length;
-                    float nextGrade = nextVS.AX * -100f;
-                    if (nextGrade >= medGradeItemLengthM)
-                    {
-                        // add the first section to the second section
-                        gradeItem.LengthM += nextLength;
-                        gradeItem.GradePct = nextGrade;
-                        startIdx = 2;
-                    }
-                }
-#endif
-
-                for (int vsIdx = startIdx; vsIdx <= endIndex; vsIdx++)
+                for (int vsIdx = 1; vsIdx < TrVectorSections.Length; vsIdx++)
                 {
                     TrVectorSection vs = TrVectorSections[vsIdx];
                     TrackSection ts = trackSections[vs.SectionIndex];
@@ -947,57 +985,8 @@ namespace Orts.Formats.Msts
                         // combine with previous section
                         gradeItem.GradePct = (gradeItem.LengthM > 0f) ? (gradeItem.GradePct * gradeItem.LengthM + grade * length) / (gradeItem.LengthM + length) : grade;
                         gradeItem.LengthM += length;
-                        goto nextSegment;
                     }
-
-#if true
-                    // if last section and it is short
-                    if (vsIdx == endIndex && length < minGradeItemLengthM && gradeItem.LengthM > medGradeItemLengthM)
-                    {
-                        // add the last section to the preceding grade
-                        gradeItem.LengthM += length;
-                        goto nextSegment;
-                    }
-#endif
-
-                    // peek at next section
-                    float nextLength = 0f; float nextGrade = 0f;
-                    if (TrVectorSections.Length > vsIdx + 1)
-                    {
-                        TrVectorSection nextVS = TrVectorSections[1];
-                        TrackSection nextTS = trackSections[nextVS.SectionIndex];
-                        nextLength = nextTS.SectionCurve != null ? MathHelper.ToRadians(Math.Abs(nextTS.SectionCurve.Angle)) * nextTS.SectionCurve.Radius : nextTS.SectionSize.Length;
-                        nextGrade = nextVS.AX * -100f;
-                    }
-
-#if true
-                    // if the current grade is a short change between two equal grades
-                    if (length < minGradeItemLengthM && gradeItem.LengthM > medGradeItemLengthM && nextLength > medGradeItemLengthM && Math.Abs(gradeItem.GradePct - nextGrade) < 0.1)
-                    {
-                        // ignore the grade of the current segment
-                        gradeItem.LengthM += length;
-                    }
-
-                    // if the current grade is a short change between two steady grades
-                    else if (length < minGradeItemLengthM && gradeItem.LengthM > medGradeItemLengthM && nextLength > medGradeItemLengthM)
-                    {
-                        // add the current grade to the preceding grade
-                        gradeItem.LengthM += length;
-                    }
-
-                    // if short grade changes and next grade is not the same as the current grade
-                    else if (length < minGradeItemLengthM && gradeItem.LengthM < medGradeItemLengthM && (nextLength > 0.01 || Math.Abs(grade - nextGrade) >= 0.1))
-                    {
-                        // average the grade
-                        gradeItem.GradePct = (gradeItem.LengthM > 0f) ? (gradeItem.GradePct * gradeItem.LengthM + grade * length) / (gradeItem.LengthM + length) : grade;
-                        gradeItem.LengthM += length;
-                    }
-#endif
-
-// else grade change
-#if true
                     else
-#endif
                     {
                         // add the grade item and start a new one
                         if (gradeItem.LengthM > 0) { GradeList.Add(gradeItem); }
@@ -1010,10 +999,7 @@ namespace Orts.Formats.Msts
                 }
 
                 // save the final segment
-                if (gradeItem.LengthM > 0)
-                {
-                    GradeList.Add(gradeItem);
-                }
+                if (gradeItem.LengthM > 0) { GradeList.Add(gradeItem); }
             }
 
             if (GradeList.Count > 0)
@@ -1032,197 +1018,148 @@ namespace Orts.Formats.Msts
         // Ensure that not too many gradeposts are created, as that would crowd the track monitor.
         public void ProcessForwardGradeInfoAndAddGradeposts(uint vectorNodeIdx, TrackDB trackDB)
         {
+            const int direction = 0;  // forward
 
-            ////// RWF TEMP
-            return;
-            ////// RWF TEMP
-
+            // for tuning the aggregation
+            const float shortGradeLengthM = 30f;
+            const float mediumGradeLengthM = 70f;
+            const float longGradeLengthM = 150f;
             const float minDistanceBetweenGradepostM = 200f;
+
+            GradePostItem gradepost = null;
 
             TrackNode trackNode = trackDB.TrackNodes[vectorNodeIdx];
             TrVectorNode vectorNode = trackNode.TrVectorNode;
 
-            (int precedingVectorNodeIdx, int precedingVectorNodeEnd) = trackDB.GetIncomingVectorNodeIndex(trackNode);
-
-            float precedingGradePct = 0f;
-            float precedingGradeLengthM = 0f;
-            GradePostItem precedingGradepost = null;
-            int precedingGradepostEnd = precedingVectorNodeEnd;
-            float precedingGradepostDistanceM = 9e9f;
-
+            // start with the last gradepost in the preceding vector node
+            bool isExistingGradepost = false;
+            (int precedingVectorNodeIdx, int precedingVectorNodeEnd) = trackDB.GetIncomingVectorNodeIndex(trackNode, direction);
             if (precedingVectorNodeIdx > 0)
             {
                 TrVectorNode precedingVectorNode = trackDB.TrackNodes[precedingVectorNodeIdx].TrVectorNode;
-                precedingGradePct = precedingVectorNode.GradePctAtEnd[precedingVectorNodeEnd];
-                precedingGradeLengthM = precedingVectorNode.GradeLengthMAtEnd[precedingVectorNodeEnd];
-                precedingGradepost = precedingVectorNode.GradepostNearestEnd[precedingVectorNodeEnd];
-                if (precedingGradepost != null)
+                GradePostItem precedingGradepost = null;
+                if (precedingVectorNodeEnd == 0)
+                    precedingGradepost = precedingVectorNode.FirstGradePost[direction];
+                else
+                    precedingGradepost = precedingVectorNode.LastGradePost[direction];
+                if (precedingGradepost != null && precedingGradepost.DistanceFromStartM + precedingGradepost.ForDistanceM >= precedingVectorNode.LengthM)
                 {
-                    precedingGradepostEnd = precedingVectorNodeEnd;
-                    precedingGradepostDistanceM = precedingVectorNodeEnd == 1 ? precedingGradepost.DistanceFromStartM : precedingVectorNode.LengthM - precedingGradepost.DistanceFromStartM;
+                    gradepost = precedingGradepost;
+                    isExistingGradepost = true;
                 }
             }
 
-            List<TrItem> newTrItems = new List<TrItem>();
+            List<TrItem> newTrItems = new List<TrItem>();  // to collect all new gradeposts, and add them all at once at the end
+
             GradePostItem firstGradepost = null;
             GradePostItem lastGradepost = null;
             float currentDistanceFromStartM = 0f;
+
             for (int gradeIdx = 0; gradeIdx < GradeList.Count; gradeIdx++)
             {
                 GradeData gradeInfo = GradeList[gradeIdx];
 
-                // determine preceding gradepost orientation
-                int precedingForward = precedingGradepostEnd;
-                int precedingReverse = precedingGradepostEnd == 0 ? 1 : 0;
-
-                // Debug: save preceding gradepost info for logging
-                float prevGpLocation = 0f, prevGpReverseGrade = 0f, prevGpReverseLength = 0f, prevGpForwardGrade = 0f, prevGpForwardLength = 0f;
-                if (precedingGradepost != null)
+                // if there is no current gradepost:
+                if (gradepost == null)
                 {
-                    prevGpLocation = precedingGradepost.DistanceFromStartM;
-                    prevGpReverseGrade = precedingGradepost.GradePct[precedingReverse]; prevGpReverseLength = precedingGradepost.ForDistanceM[precedingReverse];
-                    prevGpForwardGrade = precedingGradepost.GradePct[precedingForward]; prevGpForwardLength = precedingGradepost.ForDistanceM[precedingForward];
+                    // start a new gradepost with the current grade
+                    isExistingGradepost = false;
+                    gradepost = new GradePostItem(currentDistanceFromStartM, gradeInfo.GradePct, gradeInfo.LengthM, direction, gradeInfo.TileX, gradeInfo.TileZ, gradeInfo.X, gradeInfo.Y, gradeInfo.Z);
+                    gradepost.TrackNodeIndex = vectorNodeIdx;  // for debug
+                    gradepost.ItemName = String.Format("Calculated first: TrackNode {0} at distance {1}: direction {2}, grade {3:F2} for {4:F1}",
+                        vectorNodeIdx, currentDistanceFromStartM, direction, gradepost.GradePct, gradepost.ForDistanceM);  // for debug
+
+                    goto nextLoop;
                 }
 
-                // if there is a preceding grade, and the difference is minimal
-                if (precedingGradeLengthM > 0f && Math.Abs(precedingGradePct - gradeInfo.GradePct) < 0.1f)
+                // if the current grade is the same as the gradepost
+                if (Math.Abs(gradeInfo.GradePct - gradepost.GradePct) < 0.1f)
                 {
-                    // if there is an immediately preceding gradepost
-                    if (precedingGradepost != null && precedingGradepostDistanceM == precedingGradeLengthM)
-                    {
-                        // extend the gradepost
-                        precedingGradeLengthM = precedingGradepost.ForDistanceM[precedingForward] += gradeInfo.LengthM;
+                    // add to the gradepost
+                    gradepost.ForDistanceM += gradeInfo.LengthM;
 
-                        Debug.WriteLine("Gradepost-Extending-short: tnIdx {0}, gpItemIdx {1}, at {2}, from {3:F1}, to {4:F1}, grade {5:F2}",
-                            precedingGradepost.TrackNodeIndex, precedingGradepost.TrItemId, precedingGradepost.DistanceFromStartM, prevGpForwardLength,
-                            precedingGradepost.ForDistanceM[precedingForward], precedingGradepost.GradePct[precedingForward]);
-                    }
-                    else
-                    {
-                        // accumulate the length
-                        precedingGradeLengthM += gradeInfo.LengthM;
-                    }
-
-                    // leave the preceding grade the same, to avoid creep
+                    goto nextLoop;
                 }
 
-                // else if there are long stretches before and after
-                else if (precedingGradeLengthM > minDistanceBetweenGradepostM && gradeInfo.LengthM > minDistanceBetweenGradepostM)
+                // if a long gradepost followed by a long grade (min+, long+, --)
+                if (gradepost.ForDistanceM > minDistanceBetweenGradepostM && gradeInfo.LengthM > longGradeLengthM)
                 {
-                    Debug.Assert(precedingGradepostDistanceM >= precedingGradeLengthM, "two long stretches; preceding gradepost must be at least the reverse length away");
+                    // finalize (add) the gradepost and start a new one with the current grade
+                    if (!isExistingGradepost)
+                    {
+                        newTrItems.Add(gradepost);
+                        if (firstGradepost == null) { firstGradepost = gradepost; }
+                        lastGradepost = gradepost;
+                    }
 
-                    // create a new bidirectional gradepost
-                    var newItem = new GradePostItem(currentDistanceFromStartM, gradeInfo.GradePct, precedingGradePct * -1, gradeInfo.LengthM, precedingGradeLengthM, gradeInfo.TileX, gradeInfo.TileZ, gradeInfo.X, gradeInfo.Y, gradeInfo.Z);
-                    newItem.TrackNodeIndex = vectorNodeIdx;
-                    newItem.ItemName = String.Format("Calculated Grade in TrackNode {0} at distance {1}: grade {2:F2}/{3:F2} for {4:F1}/{5:F1}",
-                        vectorNodeIdx, currentDistanceFromStartM, newItem.GradePct[0], newItem.GradePct[1], newItem.ForDistanceM[0], newItem.ForDistanceM[1]);  // for debug
-                    newTrItems.Add(newItem);
+                    isExistingGradepost = false;
+                    gradepost = new GradePostItem(currentDistanceFromStartM, gradeInfo.GradePct, gradeInfo.LengthM, direction, gradeInfo.TileX, gradeInfo.TileZ, gradeInfo.X, gradeInfo.Y, gradeInfo.Z);
+                    gradepost.TrackNodeIndex = vectorNodeIdx;  // for debug
+                    gradepost.ItemName = String.Format("Calculated long-long: TrackNode {0} at distance {1}: direction {2}, grade {3:F2} for {4:F1}",
+                        vectorNodeIdx, currentDistanceFromStartM, direction, gradepost.GradePct, gradepost.ForDistanceM);  // for debug
 
-                    Debug.WriteLine("Gradepost-Creating-bidirectional: tnIdx {0}, gpItemIdx {1}, at {2}, fwdGrade {3:F2}, fwdDist {4:F1}, revGrade {5:F2}, revDist {6:F1}",
-                        newItem.TrackNodeIndex, newItem.TrItemId, newItem.DistanceFromStartM, newItem.GradePct[0], newItem.ForDistanceM[0], newItem.GradePct[1], newItem.ForDistanceM[1]);
-
-                    // track first and last gradepost if vector
-                    if (firstGradepost == null) { firstGradepost = newItem; }
-                    lastGradepost = newItem;
-
-                    precedingGradePct = gradeInfo.GradePct;
-                    precedingGradeLengthM = gradeInfo.LengthM;
-                    precedingGradepostDistanceM = gradeInfo.LengthM;
-                    precedingGradepost = newItem;
-                    precedingGradepostEnd = 0;
+                    goto nextLoop;
                 }
 
-                // else if there is a long forward stretch close to a preceding gradepost
-                else if (gradeInfo.LengthM > minDistanceBetweenGradepostM && precedingGradepost != null && precedingGradepostDistanceM < minDistanceBetweenGradepostM)
+                // if a short gradepost followed by a long grade (short-, long+, --)
+                if (gradepost.ForDistanceM <= shortGradeLengthM && gradeInfo.LengthM > longGradeLengthM)
                 {
-                    Debug.Assert(precedingGradepost.ForDistanceM[precedingForward] <= 0, "long forward grade just after a GP; GP should not have a forward grade");
+                    // adopt the current grade
+                    gradepost.GradePct = gradeInfo.GradePct;
+                    gradepost.ForDistanceM += gradeInfo.LengthM;
 
-                    float delta = currentDistanceFromStartM - (precedingGradepost.DistanceFromStartM + precedingGradepost.ForDistanceM[precedingForward]);
-
-                    // if the forward grade is the same as the preceding gradepost's forward grade
-                    if (Math.Abs(gradeInfo.GradePct - precedingGradepost.GradePct[precedingForward]) < 0.1f)
-                    {
-                        // fully extend the preceding gradepost
-                        precedingGradeLengthM = precedingGradepost.ForDistanceM[precedingForward] += delta + gradeInfo.LengthM;
-
-                        Debug.WriteLine("Gradepost-Extending-medium: tnIdx {0}, gpItemIdx {1}, at {2}, from {3:F1}, to {4:F1}, grade {5:F2}",
-                            precedingGradepost.TrackNodeIndex, precedingGradepost.TrItemId, precedingGradepost.DistanceFromStartM, prevGpForwardLength, precedingGradepost.ForDistanceM[precedingForward], precedingGradepost.GradePct[precedingForward]);
-                    }
-                    else
-                    {
-                        // move the preceding gradepost and update the forward grade
-                        precedingGradepost.DistanceFromStartM += delta / 2f;
-                        precedingGradeLengthM = precedingGradepost.ForDistanceM[precedingReverse] += delta / 2f;
-                        precedingGradepostDistanceM -= delta / 2f;
-
-                        // and set the forward grade to the new grade and extended length
-                        precedingGradepost.GradePct[precedingForward] = gradeInfo.GradePct;
-                        precedingGradepost.ForDistanceM[precedingForward] = gradeInfo.LengthM + delta / 2f;
-
-                        Debug.WriteLine("Gradepost-Moving-short: tnIdx {0}, gpItemIdx {1}, from {2:F1}, to {3:F1}, revDist {4:F1} -> {5:F1}, fwdGrade {6:F2} -> {7:F2}, fwdDist {8:F1} -> {9:F2}",
-                            precedingGradepost.TrackNodeIndex, precedingGradepost.TrItemId, prevGpLocation, precedingGradepost.DistanceFromStartM, prevGpReverseLength, precedingGradepost.ForDistanceM[precedingReverse],
-                            prevGpForwardGrade, precedingGradepost.GradePct[precedingForward], prevGpForwardLength, precedingGradepost.ForDistanceM[precedingForward]);
-                    }
-
-                    precedingGradePct = gradeInfo.GradePct;
+                    goto nextLoop;
                 }
 
-                // else if there is a long forward streach a bit beyond the preceding gradepost
-                else if (gradeInfo.LengthM > minDistanceBetweenGradepostM && precedingGradepost != null && precedingGradepostDistanceM < 2f * minDistanceBetweenGradepostM)
+                // get the next grade segment
+                float nextGradePct = gradeIdx + 1 < GradeList.Count ? GradeList[gradeIdx + 1].GradePct : 918273f;  // never matches a real grade
+                float nextGradeLengthM = gradeIdx + 1 < GradeList.Count ? GradeList[gradeIdx + 1].LengthM : 0f;
+
+                // if there is a brief deviation from a steady grade (same, short/medium, same)
+                if (nextGradeLengthM > 0f && Math.Abs(gradepost.GradePct - nextGradePct) < 0.1f &&
+                    ((gradepost.ForDistanceM > longGradeLengthM && nextGradeLengthM > longGradeLengthM && gradeInfo.LengthM <= mediumGradeLengthM) ||
+                     (gradepost.ForDistanceM > mediumGradeLengthM && nextGradeLengthM > mediumGradeLengthM && gradeInfo.LengthM <= shortGradeLengthM)))
                 {
-                    float delta = currentDistanceFromStartM - (precedingGradepost.DistanceFromStartM + precedingGradepost.ForDistanceM[precedingForward]);
+                    // absorbe the current (short) grade into the gradepost (add length, but keep grade); next loop will also add the next grade
+                    gradepost.ForDistanceM += gradeInfo.LengthM;
 
-                    // if the forward grade is the same as the preceding gradepost's forward grade
-                    if (Math.Abs(gradeInfo.GradePct - precedingGradepost.GradePct[precedingForward]) < 0.1f)
-                    {
-                        // fully extend the preceding gradepost
-                        precedingGradeLengthM = precedingGradepost.ForDistanceM[precedingForward] += delta + gradeInfo.LengthM;
-
-                        Debug.WriteLine("Gradepost-Extending-long: tnIdx {0}, gpItemIdx {1}, at {2}, from {3:F1}, to {4:F1}, grade {5:F2}",
-                            precedingGradepost.TrackNodeIndex, precedingGradepost.TrItemId, precedingGradepost.DistanceFromStartM, prevGpForwardLength, precedingGradepost.ForDistanceM[precedingForward],precedingGradepost.GradePct[precedingForward]);
-                    }
-                    else
-                    {
-                        // extend the preceding gradepost by half the difference
-                        precedingGradeLengthM = precedingGradepost.ForDistanceM[precedingForward] += delta / 2f;
-
-                        Debug.WriteLine("Gradepost-Extending-medium: tnIdx {0}, gpItemIdx {1}, at {2}, from {3:F1}, to {4:F1}, grade {5:F2}",
-                            precedingGradepost.TrackNodeIndex, precedingGradepost.TrItemId, precedingGradepost.DistanceFromStartM, prevGpForwardLength, precedingGradepost.ForDistanceM[precedingForward], precedingGradepost.GradePct[precedingForward]);
-
-                        // and create a new bidirectional gradepost
-                        var newItem = new GradePostItem(currentDistanceFromStartM - delta / 2f, gradeInfo.GradePct, precedingGradepost.GradePct[precedingForward], gradeInfo.LengthM + delta / 2f, precedingGradepost.ForDistanceM[precedingForward], gradeInfo.TileX, gradeInfo.TileZ, gradeInfo.X, gradeInfo.Y, gradeInfo.Z);
-                        newItem.TrackNodeIndex = vectorNodeIdx;
-                        newItem.ItemName = String.Format("Calculated Grade in TrackNode {0} at distance {1}: grade {2:F2}/{3:F2} for {4:F1}/{5:F1}",
-                            vectorNodeIdx, currentDistanceFromStartM, newItem.GradePct[0], newItem.GradePct[1], newItem.ForDistanceM[0], newItem.ForDistanceM[1]);  // for debug
-                        newTrItems.Add(newItem);
-
-                        Debug.WriteLine("Gradepost-Creating-bidirectional: tnIdx {0}, gpItemIdx {1}, at {2}, fwdGrade {3:F2}, fwdDist {4:F1}, revGrade {5:F2}, revDist {6:F1}",
-                            newItem.TrackNodeIndex, newItem.TrItemId, newItem.DistanceFromStartM, newItem.GradePct[0], newItem.ForDistanceM[0], newItem.GradePct[1], newItem.ForDistanceM[1]);
-
-                        // track first and last gradepost if vector
-                        if (firstGradepost == null) { firstGradepost = newItem; }
-                        lastGradepost = newItem;
-
-
-
-                    }
-
-
+                    goto nextLoop;
                 }
 
+                // if gradepost is long enough
+                if (gradepost.ForDistanceM > minDistanceBetweenGradepostM)
+                {
+                    // finalize (add) the gradepost and start a new one with the current grade
+                    if (!isExistingGradepost)
+                    {
+                        newTrItems.Add(gradepost);
+                        if (firstGradepost == null) { firstGradepost = gradepost; }
+                        lastGradepost = gradepost;
+                    }
 
-                // else undulating
-                else
-                        {
-                    // TODO
+                    isExistingGradepost = false;
+                    gradepost = new GradePostItem(currentDistanceFromStartM, gradeInfo.GradePct,gradeInfo.LengthM, direction, gradeInfo.TileX, gradeInfo.TileZ, gradeInfo.X, gradeInfo.Y, gradeInfo.Z);
+                    gradepost.TrackNodeIndex = vectorNodeIdx;  // for debug
+                    gradepost.ItemName = String.Format("Calculated long-gradepost: TrackNode {0} at distance {1}: direction {2}, grade {3:F2} for {4:F1}",
+                        vectorNodeIdx, currentDistanceFromStartM, direction, gradepost.GradePct, gradepost.ForDistanceM);  // for debug
 
-                    precedingGradePct = gradeInfo.GradePct;
-                    precedingGradeLengthM = gradeInfo.LengthM;
-                    precedingGradepostDistanceM += gradeInfo.LengthM;
+                    goto nextLoop;
                 }
 
-                precedingGradepostDistanceM += gradeInfo.LengthM;
+                // else, average the grade
+                gradepost.GradePct = (gradepost.GradePct * gradepost.ForDistanceM + gradeInfo.GradePct * gradeInfo.LengthM) / (gradepost.ForDistanceM + gradeInfo.LengthM);
+                gradepost.ForDistanceM += gradeInfo.LengthM;
+
+nextLoop:
                 currentDistanceFromStartM += gradeInfo.LengthM;
+            }
+
+            // add the last gradepost
+            if (gradepost?.ForDistanceM > minDistanceBetweenGradepostM && !isExistingGradepost)
+            {
+                newTrItems.Add(gradepost);
+                if (firstGradepost == null) { firstGradepost = gradepost; }
+                lastGradepost = gradepost;
             }
 
             // append new items to the Track DB's TrItemTable, and update references
@@ -1231,11 +1168,185 @@ namespace Orts.Formats.Msts
                 int firstInsertIdx = trackDB.AddTrItems(newTrItems.ToArray());
                 AddTrItemRef(firstInsertIdx, trackDB.TrItemTable);
 
-                vectorNode.GradepostNearestEnd[0] = firstGradepost;
-                vectorNode.GradepostNearestEnd[1] = lastGradepost;
+                vectorNode.FirstGradePost[direction] = firstGradepost;
+                vectorNode.LastGradePost[direction] = lastGradepost;
             }
         }
-    }
+
+        /// Process the reverse grade info in the vector node, to determine where gradeposts should be placed.
+        /// Then create the gradeposts and add them to the vector node's existing list of track items.
+        /// </summary>
+        // Ensure that not too many gradeposts are created, as that would crowd the track monitor.
+        public void ProcessReverseGradeInfoAndAddGradeposts(uint vectorNodeIdx, TrackDB trackDB)
+        {
+            const int direction = 1;  // reverse
+
+            // for tuning the aggregation
+            const float shortGradeLengthM = 30f;
+            const float mediumGradeLengthM = 70f;
+            const float longGradeLengthM = 150f;
+            const float minDistanceBetweenGradepostM = 200f;
+
+            GradePostItem gradepost = null;
+            GradeData precedingGrade = new GradeData(); // in reverse direction, we need the location of the preceding grade
+
+            TrackNode trackNode = trackDB.TrackNodes[vectorNodeIdx];
+            TrVectorNode vectorNode = trackNode.TrVectorNode;
+
+            // start with the last gradepost in the preceding vector node
+            bool isExistingGradepost = false;
+            (int precedingVectorNodeIdx, int precedingVectorNodeEnd) = trackDB.GetIncomingVectorNodeIndex(trackNode, direction);
+            if (precedingVectorNodeIdx > 0)
+            {
+                TrVectorNode precedingVectorNode = trackDB.TrackNodes[precedingVectorNodeIdx].TrVectorNode;
+                GradePostItem precedingGradepost = null;
+                if (precedingVectorNodeEnd == 0)
+                {
+                    precedingGradepost = precedingVectorNode.FirstGradePost[direction];
+                    if (precedingVectorNode.GradeList?.Count > 0) { precedingGrade = precedingVectorNode.GradeList[0]; }
+                }
+                else
+                {
+                    precedingGradepost = precedingVectorNode.LastGradePost[direction];
+                    if (precedingVectorNode.GradeList?.Count > 0) { precedingGrade = precedingVectorNode.GradeList[precedingVectorNode.GradeList.Count - 1]; }
+                }
+                if (precedingGradepost != null && precedingGradepost.DistanceFromStartM + precedingGradepost.ForDistanceM >= precedingVectorNode.LengthM)
+                {
+                    gradepost = precedingGradepost;
+                    isExistingGradepost = true;
+                }
+            }
+
+            List<TrItem> newTrItems = new List<TrItem>();  // to collect all new gradeposts, and add them all at once at the end
+
+            GradePostItem firstGradepost = null;
+            GradePostItem lastGradepost = null;
+            float currentDistanceFromStartM = vectorNode.LengthM;
+
+            for (int gradeIdx = GradeList.Count - 1; gradeIdx >= 0; gradeIdx--)
+            {
+                GradeData tempGradeInfo = GradeList[gradeIdx];
+                GradeData gradeInfo = tempGradeInfo;
+                gradeInfo.GradePct = -1 * gradeInfo.GradePct;
+
+                // if there is no current gradepost:
+                if (gradepost == null)
+                {
+                    // start a new gradepost with the current grade, and preceding grade location
+                    if (precedingGrade.LengthM <= 0f) { precedingGrade = gradeInfo; }  // use current grade (location) if there is no preceding grade
+                    gradepost = new GradePostItem(currentDistanceFromStartM, gradeInfo.GradePct, gradeInfo.LengthM, direction, precedingGrade.TileX, precedingGrade.TileZ, precedingGrade.X, precedingGrade.Y, precedingGrade.Z);
+                    gradepost.TrackNodeIndex = vectorNodeIdx;  // for debug
+                    gradepost.ItemName = String.Format("Calculated first: TrackNode {0} at distance {1}: direction {2}, grade {3:F2} for {4:F1}",
+                        vectorNodeIdx, currentDistanceFromStartM, direction, gradepost.GradePct, gradepost.ForDistanceM);  // for debug
+                    isExistingGradepost = false;
+
+                    goto nextLoop;
+                }
+
+                // if the current grade is the same as the gradepost
+                if (Math.Abs(gradeInfo.GradePct - gradepost.GradePct) < 0.1f)
+                {
+                    // add to the gradepost
+                    gradepost.ForDistanceM += gradeInfo.LengthM;
+
+                    goto nextLoop;
+                }
+
+                // if a long gradepost followed by a long grade (min+, long+, --)
+                if (gradepost.ForDistanceM > minDistanceBetweenGradepostM && gradeInfo.LengthM > longGradeLengthM)
+                {
+                    // finalize (add) the gradepost
+                    if (!isExistingGradepost)
+                    {
+                        newTrItems.Add(gradepost);
+                        if (firstGradepost == null) { firstGradepost = gradepost; }
+                        lastGradepost = gradepost;
+                    }
+
+                    // start a new gradepost with the current grade, and preceding grade location
+                    gradepost = new GradePostItem(currentDistanceFromStartM, gradeInfo.GradePct, gradeInfo.LengthM, direction, precedingGrade.TileX, precedingGrade.TileZ, precedingGrade.X, precedingGrade.Y, precedingGrade.Z);
+                    gradepost.TrackNodeIndex = vectorNodeIdx;  // for debug
+                    gradepost.ItemName = String.Format("Calculated long-long: TrackNode {0} at distance {1}: direction {2}, grade {3:F2} for {4:F1}",
+                        vectorNodeIdx, currentDistanceFromStartM, direction, gradepost.GradePct, gradepost.ForDistanceM);  // for debug
+                    isExistingGradepost = false;
+
+                    goto nextLoop;
+                }
+
+                // if a short gradepost followed by a long grade (short-, long+, --)
+                if (gradepost.ForDistanceM <= shortGradeLengthM && gradeInfo.LengthM > longGradeLengthM)
+                {
+                    // adopt the current grade
+                    gradepost.GradePct = gradeInfo.GradePct;
+                    gradepost.ForDistanceM += gradeInfo.LengthM;
+
+                    goto nextLoop;
+                }
+
+                // get the next grade segment
+                float nextGradePct = gradeIdx - 1 >= 0 ? GradeList[gradeIdx - 1].GradePct : 918273f;  // never matches a real grade
+                float nextGradeLengthM = gradeIdx - 1 >= 0 ? GradeList[gradeIdx - 1].LengthM : 0f;
+
+                // if there is a brief deviation from a steady grade (same, short/medium, same)
+                if (nextGradeLengthM > 0f && Math.Abs(gradepost.GradePct - nextGradePct) < 0.1f &&
+                    ((gradepost.ForDistanceM > longGradeLengthM && nextGradeLengthM > longGradeLengthM && gradeInfo.LengthM <= mediumGradeLengthM) ||
+                     (gradepost.ForDistanceM > mediumGradeLengthM && nextGradeLengthM > mediumGradeLengthM && gradeInfo.LengthM <= shortGradeLengthM)))
+                {
+                    // absorbe the current (short) grade into the gradepost (add length, but keep grade); next loop will also add the next grade
+                    gradepost.ForDistanceM += gradeInfo.LengthM;
+
+                    goto nextLoop;
+                }
+
+                // if gradepost is long enough
+                if (gradepost.ForDistanceM > minDistanceBetweenGradepostM)
+                {
+                    // finalize (add) the gradepost
+                    if (!isExistingGradepost)
+                    {
+                        newTrItems.Add(gradepost);
+                        if (firstGradepost == null) { firstGradepost = gradepost; }
+                        lastGradepost = gradepost;
+                    }
+
+                    // start a new gradepost with the current grade, and preceding grade location
+                    gradepost = new GradePostItem(currentDistanceFromStartM, gradeInfo.GradePct, gradeInfo.LengthM, direction, precedingGrade.TileX, precedingGrade.TileZ, precedingGrade.X, precedingGrade.Y, precedingGrade.Z);
+                    gradepost.TrackNodeIndex = vectorNodeIdx;  // for debug
+                    gradepost.ItemName = String.Format("Calculated long-gradepost: TrackNode {0} at distance {1}: direction {2}, grade {3:F2} for {4:F1}",
+                        vectorNodeIdx, currentDistanceFromStartM, direction, gradepost.GradePct, gradepost.ForDistanceM);  // for debug
+                    isExistingGradepost = false;
+
+                    goto nextLoop;
+                }
+
+                // else, average the grade
+                gradepost.GradePct = (gradepost.GradePct * gradepost.ForDistanceM + gradeInfo.GradePct * gradeInfo.LengthM) / (gradepost.ForDistanceM + gradeInfo.LengthM);
+                gradepost.ForDistanceM += gradeInfo.LengthM;
+
+nextLoop:
+                currentDistanceFromStartM -= gradeInfo.LengthM;
+                precedingGrade = gradeInfo;
+            }
+
+            // add the last gradepost
+            if (gradepost?.ForDistanceM > minDistanceBetweenGradepostM && !isExistingGradepost)
+            {
+                newTrItems.Add(gradepost);
+                if (firstGradepost == null) { firstGradepost = gradepost; }
+                lastGradepost = gradepost;
+            }
+
+            // append new items to the Track DB's TrItemTable, and update references
+            if (newTrItems.Count > 0)
+            {
+                int firstInsertIdx = trackDB.AddTrItems(newTrItems.ToArray());
+                AddTrItemRef(firstInsertIdx, trackDB.TrItemTable);
+
+                vectorNode.FirstGradePost[direction] = firstGradepost;
+                vectorNode.LastGradePost[direction] = lastGradepost;
+            }
+        }
+    }  // end class TrVectorNode
 
     /// <summary>
     /// Describes a single section in a vector node. 
@@ -2021,18 +2132,20 @@ namespace Orts.Formats.Msts
     // grade markers (or plates) with the track may be supported. 
     public class GradePostItem : TrItem
     {
-        /// <summary>Grade in percent. Index 0 is in track direction, index 1 is reverse.</summary>
-        public float[] GradePct = new float[2];
-        /// <summary>Distance (in meters) for which the grade applies. Index 0 is in track direction, index 1 is reverse.</summary>
-        public float[] ForDistanceM = new float[2];
-        /// <summary>Distance of the grade post from the start of the track node.</summary>
-        public float DistanceFromStartM;
+        /// <summary>Grade in percent.</summary>
+        public float GradePct;
+        /// <summary>Distance (in meters) for which the grade applies.</summary>
+        public float ForDistanceM;
+        /// <summary>Direction in which the grade applies. 0 is in track node direction, 1 is in reverse direction.</summary>
+        public int Direction; 
 
         // fields not read from file, set in post-processing
+        /// <summary>Distance of the grade post from the start of the track node. TBD if alwasy from start, or if depends on direction. TBD if needed or for DEBUG.</summary>
+        public float DistanceFromStartM;
         /// <summary>Set post construction. Reference (index) to the Track Node the grade post belongs to.</summary>
         public uint TrackNodeIndex;
         /// <summary>Set post construction. Reference to TrackCircuitGradepost (in signals).</summary>
-        public int SigObj;  // TODO:  rename, as it is not really a signalling object referenc; was copied from speed post
+        public int TcGradepostIdx;  // based on SigObj from speed post
 
         /// <summary>
         /// Default constructor used during file parsing.
@@ -2047,12 +2160,13 @@ namespace Orts.Formats.Msts
         /// <summary>
         /// Create a Grade Marker (Post) based on grade info from the track profile.
         /// </summary>
-        public GradePostItem(float distFromStart, float forwardGrade, float reverseGrade, float forwardDist, float reverseDist, int tileX, int tileZ, float x, float y, float z)
+        public GradePostItem(float distFromStart, float grade, float length, int direction, int tileX, int tileZ, float x, float y, float z)
         {
             ItemType = trItemType.trGRADEPOST;
             DistanceFromStartM = distFromStart;
-            GradePct[0] = forwardGrade; GradePct[1] = reverseGrade;
-            ForDistanceM[0] = forwardDist; ForDistanceM[1] = reverseDist;
+            GradePct = grade;
+            ForDistanceM = length;
+            Direction = direction;
             TileX = tileX; TileZ = tileZ;
             X = x; Y = y; Z = z;
         }

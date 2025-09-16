@@ -81,8 +81,7 @@ namespace Orts.Simulation.Signalling
         public List<Milepost> MilepostList = new List<Milepost>();                     // list of mileposts
         private int foundMileposts;
 
-        public List<Gradepost> GradepostList = new List<Gradepost>();                  // list of gradeposts
-        private int FoundGradeposts;
+        public List<Gradepost>[] GradepostList = new List<Gradepost>[2];  // list of gradeposts in each direction (0 = forward)
 
         public Signals(Simulator simulator, SignalConfigurationFile sigcfg, CancellationToken cancellation)
         {
@@ -91,6 +90,9 @@ namespace Orts.Simulation.Signalling
 #if DEBUG_REPORTS
             File.Delete(@"C:\temp\printproc.txt");
 #endif
+
+            // needed in all constructors
+            GradepostList[0] = new List<Gradepost>(); GradepostList[1] = new List<Gradepost>();
 
             SignalRefList = new Dictionary<uint, SignalRefObject>();
             SignalHeadList = new Dictionary<uint, SignalObject>();
@@ -270,38 +272,58 @@ namespace Orts.Simulation.Signalling
 
 #if DEBUG
             // dump grade posts
-            int cnt1 = 0;
-            if (GradepostList != null)
+            int cnt1 = 0; int cnt2 = 0;
+            if (GradepostList[0] != null)
             {
-                foreach (var gradepost in GradepostList)
+                foreach (var gradepost in GradepostList[0])
                 {
-                    Debug.WriteLine(String.Format("Signals-Gradepost: TrackNode = {0}, idx {1}, value {2:F2}/{3:F2}, for {4:F1}/{5:F1}, TrItemId = {6}, TCReference = {7}, tcOffset = {8}",
-                        gradepost.TrackNodeIdx, cnt1, gradepost.GradePct[0], gradepost.GradePct[1], gradepost.ForDistanceM[0], gradepost.ForDistanceM[1], gradepost.TrItemId, gradepost.TCReference, gradepost.TCOffset));
+                    Debug.WriteLine(String.Format("Signals-Gradepost-Fwd: TrackNode = {0}, idx {1}, grade {2:F2}, for {3:F1}, dir {4}, TrItemId = {5}, TCReference = {6}, tcOffset = {7}",
+                        gradepost.TrackNodeIdx, cnt1, gradepost.GradePct, gradepost.ForDistanceM, gradepost.Direction, gradepost.TrItemId, gradepost.TCReference, gradepost.TCOffset));
                     cnt1++;
                 }
             }
-            Debug.WriteLine(String.Format("Signals-Gradepost-Count: {0}", cnt1));
+            if (GradepostList[1] != null)
+            {
+                foreach (var gradepost in GradepostList[1])
+                {
+                    Debug.WriteLine(String.Format("Signals-Gradepost-Rev: TrackNode = {0}, idx {1}, grade {2:F2}, for {3:F1}, dir {4}, TrItemId = {5}, TCReference = {6}, tcOffset = {7}",
+                        gradepost.TrackNodeIdx, cnt2, gradepost.GradePct, gradepost.ForDistanceM, gradepost.Direction, gradepost.TrItemId, gradepost.TCReference, gradepost.TCOffset));
+                    cnt2++;
+                }
+            }
+            Debug.WriteLine(String.Format("Signals-Gradepost-Count: {0}/{1}", cnt1, cnt2));
 
             // dump track circuit items of type grade post
-            int cnt2 = 0;
+            int cnt3 = 0; int cnt4 = 0;
             if (TrackCircuitList != null)
             {
                 foreach (var tcSection in TrackCircuitList)
                 {
-                    if (tcSection?.CircuitItems?.TrackCircuitGradeposts != null)
+                    if (tcSection?.CircuitItems?.TrackCircuitGradeposts[0] != null)
                     {
-                        foreach (var tcGradeItem in tcSection.CircuitItems.TrackCircuitGradeposts)
+                        foreach (var tcGradeItem in tcSection.CircuitItems.TrackCircuitGradeposts[0])
                         {
                             var gradepost = tcGradeItem.GradepostRef;
-                            Debug.WriteLine(String.Format("Signals-TrackCircuitGradepost: TrackCircuitSection {0}/{1}, TrackNodeIdx {2}, TrItemIdx {3}, location {4:F1}/{5:F1}, grade = {6:F2}/{7:F2}, for {8:F1}/{9:F1}, gp-TrItemId {10}, gp-Reference {11}, gp-Offset {12}",
-                                tcSection.Index, tcSection.OriginalIndex, tcGradeItem.TrackNodeIdx, tcGradeItem.TrItemIdx, tcGradeItem.GradepostLocation[0], tcGradeItem.GradepostLocation[1], gradepost.GradePct[0], gradepost.GradePct[1], gradepost.ForDistanceM[0], gradepost.ForDistanceM[1], gradepost.TrItemId, gradepost.TCReference, gradepost.TCOffset));
-                            cnt2++;
+                            Debug.WriteLine(String.Format("Signals-TrackCircuitGradepost-Fwd: TrackCircuitSection {0}/{1}, TrackNodeIdx {2}, TrItemIdx {3}, location {4:F1}, grade = {5:F2}, for {6:F1}, direction {7}, gp-TrItemId {8}, gp-Reference {9}, gp-Offset {10}",
+                                tcSection.Index, tcSection.OriginalIndex, tcGradeItem.TrackNodeIdx, tcGradeItem.TrItemIdx, tcGradeItem.GradepostLocation, gradepost.GradePct, gradepost.ForDistanceM, gradepost.Direction, gradepost.TrItemId, gradepost.TCReference, gradepost.TCOffset));
+                            cnt3++;
                         }
                     }
-                    else { Debug.WriteLine(String.Format("Signals-TrackCircuitGradepost: TCIdx {0}/{1}, none", tcSection.Index, tcSection.OriginalIndex)); }
+                    else { Debug.WriteLine(String.Format("Signals-TrackCircuitGradepost-Fwd: TCIdx {0}/{1}, none", tcSection.Index, tcSection.OriginalIndex)); }
+                    if (tcSection?.CircuitItems?.TrackCircuitGradeposts[1] != null)
+                    {
+                        foreach (var tcGradeItem in tcSection.CircuitItems.TrackCircuitGradeposts[1])
+                        {
+                            var gradepost = tcGradeItem.GradepostRef;
+                            Debug.WriteLine(String.Format("Signals-TrackCircuitGradepost-Rev: TrackCircuitSection {0}/{1}, TrackNodeIdx {2}, TrItemIdx {3}, location {4:F1}, grade = {5:F2}, for {6:F1}, direction {7}, gp-TrItemId {8}, gp-Reference {9}, gp-Offset {10}",
+                                tcSection.Index, tcSection.OriginalIndex, tcGradeItem.TrackNodeIdx, tcGradeItem.TrItemIdx, tcGradeItem.GradepostLocation, gradepost.GradePct, gradepost.ForDistanceM, gradepost.Direction, gradepost.TrItemId, gradepost.TCReference, gradepost.TCOffset));
+                            cnt4++;
+                        }
+                    }
+                    else { Debug.WriteLine(String.Format("Signals-TrackCircuitGradepost-Rev: TCIdx {0}/{1}, none", tcSection.Index, tcSection.OriginalIndex)); }
                 }
             }
-            Debug.WriteLine(String.Format("Signals-TrackCircuitGradepost-Count: {0}", cnt2));
+            Debug.WriteLine(String.Format("Signals-TrackCircuitGradepost-Count: {0}/{1}", cnt3, cnt4));
 #endif
         }
 
@@ -311,6 +333,9 @@ namespace Orts.Simulation.Signalling
         public Signals(Simulator simulator, SignalConfigurationFile sigcfg, BinaryReader inf, CancellationToken cancellation)
             : this(simulator, sigcfg, cancellation)
         {
+            // needed in all constructors
+            GradepostList[0] = new List<Gradepost>(); GradepostList[1] = new List<Gradepost>();
+
             int signalIndex = inf.ReadInt32();
             while (signalIndex >= 0)
             {
@@ -1007,8 +1032,8 @@ namespace Orts.Simulation.Signalling
                         else if (TrItems[TDBRef].ItemType == TrItem.trItemType.trGRADEPOST)
                         {
                             GradePostItem gradepostItem = (GradePostItem)TrItems[TDBRef];
-                            int gradePostIdx = AddGradepost(index, gradepostItem.GradePct, gradepostItem.ForDistanceM, TDBRef);
-                            gradepostItem.SigObj = gradePostIdx;
+                            int gradePostIdx = AddGradepost(index, gradepostItem.GradePct, gradepostItem.ForDistanceM, gradepostItem.Direction, TDBRef);
+                            gradepostItem.TcGradepostIdx = gradePostIdx;
                         }
                     }
                 }
@@ -1175,14 +1200,13 @@ namespace Orts.Simulation.Signalling
 
         /// <summary>This method adds a new Gradepost to the GradepostList in Signals.</summary>
         /// <returns>The index of the gradepost added.</returns>
-        private int AddGradepost(int trackNodeIdx, float[] gradePct, float[] distance, int TDBRef)
+        private int AddGradepost(int trackNodeIdx, float gradePct, float distance, int dir, int TDBRef)
         {
-            Gradepost gradepost = new Gradepost((uint)TDBRef, gradePct[0], gradePct[1], distance[0], distance[1]);
+            Gradepost gradepost = new Gradepost((uint)TDBRef, gradePct,distance, dir);
             gradepost.TrackNodeIdx = trackNodeIdx;
-            GradepostList.Add(gradepost);
+            GradepostList[dir].Add(gradepost);
 
-            FoundGradeposts = GradepostList.Count;
-            return FoundGradeposts - 1;
+            return GradepostList[dir].Count - 1;
         }
 
         /// <summary>
@@ -2240,16 +2264,20 @@ namespace Orts.Simulation.Signalling
             else if (thisItem.ItemType == TrItem.trItemType.trGRADEPOST)
             {
                 GradePostItem gradePostItem = (GradePostItem)thisItem;
-                Gradepost gradepost = GradepostList[gradePostItem.SigObj];
+                int direction = gradePostItem.Direction;
+
+                Gradepost gradepost = GradepostList[direction][gradePostItem.TcGradepostIdx];
 
                 float gradepostDistance = TDBTrav.DistanceTo(thisItem.TileX, thisItem.TileZ, thisItem.X, thisItem.Y, thisItem.Z);
-                TrackCircuitGradepost newTCGradepost = new TrackCircuitGradepost(gradepost, gradepostDistance, thisCircuit.Length - gradepostDistance);
+                // if (direction != 0) { gradepostDistance = thisCircuit.Length - gradepostDistance; }
+
+                TrackCircuitGradepost newTCGradepost = new TrackCircuitGradepost(gradepost, gradepostDistance, direction);
                 newTCGradepost.TrackNodeIdx = thisCircuit.OriginalIndex;
                 newTCGradepost.TrItemIdx = thisItem.TrItemId;
-                thisCircuit.CircuitItems.TrackCircuitGradeposts.Add(newTCGradepost);
+                thisCircuit.CircuitItems.TrackCircuitGradeposts[direction].Add(newTCGradepost);
 
-                Debug.WriteLine(String.Format("Adding TrackCircuitGradepost {0} to TrackCircuitSection {1}, grade {2:F2}/{3:F2}, for {4:F1}/{5:F1}, from TrackNode {6}, TrItem {7}, named {8}",
-                    thisCircuit.CircuitItems.TrackCircuitGradeposts.Count - 1, thisCircuit.Index, gradePostItem.GradePct[0], gradePostItem.GradePct[1], gradePostItem.ForDistanceM[0], gradePostItem.ForDistanceM[1], thisCircuit.OriginalIndex, thisItem.TrItemId, thisItem.ItemName));
+                Debug.WriteLine(String.Format("Adding TrackCircuitGradepost {0} to TrackCircuitSection {1}, grade {2:F2}, for {3:F1}, direction {4}, from TrackNode {5}, TrItem {6}, named {7}",
+                    thisCircuit.CircuitItems.TrackCircuitGradeposts[direction].Count - 1, thisCircuit.Index, gradePostItem.GradePct, gradePostItem.ForDistanceM, gradePostItem.Direction, thisCircuit.OriginalIndex, thisItem.TrItemId, thisItem.ItemName));
             }
             // Insert crossover in special crossover list
             else if (thisItem.ItemType == TrItem.trItemType.trCROSSOVER)
@@ -2694,18 +2722,37 @@ namespace Orts.Simulation.Signalling
                 }
             }
 
-            // copy gradepost information
-            foreach (TrackCircuitGradepost thisGradepost in orgSection.CircuitItems.TrackCircuitGradeposts)
+            // copy forward gradepost information
+            var orgGradepostList = orgSection.CircuitItems.TrackCircuitGradeposts[0];
+            var replGradepostList = replSection.CircuitItems.TrackCircuitGradeposts[0];
+            var newGreadpostList = newSection.CircuitItems.TrackCircuitGradeposts[0];
+            foreach (TrackCircuitGradepost thisGradepost in orgGradepostList)
             {
-                if (thisGradepost.GradepostLocation[0] > replSection.Length)
+                if (thisGradepost.GradepostLocation <= newSection.Length)
                 {
-                    thisGradepost.GradepostLocation[0] -= replSection.Length;
-                    newSection.CircuitItems.TrackCircuitGradeposts.Add(thisGradepost);
+                    newGreadpostList.Add(thisGradepost);
                 }
                 else
                 {
-                    thisGradepost.GradepostLocation[1] -= newSection.Length;
-                    replSection.CircuitItems.TrackCircuitGradeposts.Add(thisGradepost);
+                    thisGradepost.GradepostLocation -= newSection.Length;
+                    replGradepostList.Add(thisGradepost);
+                }
+            }
+
+            // copy reverse gradepost information
+            orgGradepostList = orgSection.CircuitItems.TrackCircuitGradeposts[1];
+            replGradepostList = replSection.CircuitItems.TrackCircuitGradeposts[1];
+            newGreadpostList = newSection.CircuitItems.TrackCircuitGradeposts[1];
+            foreach (TrackCircuitGradepost thisGradepost in orgGradepostList)
+            {
+                if (thisGradepost.GradepostLocation > replSection.Length)
+                {
+                    thisGradepost.GradepostLocation -= replSection.Length;
+                    newGreadpostList.Add(thisGradepost);
+                }
+                else
+                {
+                    replGradepostList.Add(thisGradepost);
                 }
             }
 
@@ -3104,15 +3151,25 @@ namespace Orts.Simulation.Signalling
                 }
             }
 
-            // process gradeposts
-            foreach (TrackCircuitGradepost thisItem in thisSection.CircuitItems.TrackCircuitGradeposts)
+            // process gradeposts, each direction
+            foreach (TrackCircuitGradepost thisItem in thisSection.CircuitItems.TrackCircuitGradeposts[0])
             {
                 Gradepost thisGradepost = thisItem.GradepostRef;
 
                 if (thisGradepost.TCReference <= 0)
                 {
                     thisGradepost.TCReference = thisNode;
-                    thisGradepost.TCOffset = thisItem.GradepostLocation[0];
+                    thisGradepost.TCOffset = thisItem.GradepostLocation;
+                }
+            }
+            foreach (TrackCircuitGradepost thisItem in thisSection.CircuitItems.TrackCircuitGradeposts[1])
+            {
+                Gradepost thisGradepost = thisItem.GradepostRef;
+
+                if (thisGradepost.TCReference <= 0)
+                {
+                    thisGradepost.TCReference = thisNode;
+                    thisGradepost.TCOffset = thisItem.GradepostLocation;
                 }
             }
         }

@@ -22,20 +22,22 @@ namespace Orts.Simulation.Signalling
     /// </summary>
     public class TrackCircuitGradepost
     {
-        /// <summary>Gradepost; is reference to objecty in Signals.GradepostList.</summary>
+        /// <summary>Reference to objecty in Signals' GradepostList (by direction).</summary>
         public Gradepost GradepostRef;
-        /// <summary>Gradepost location (distance) from each end of the section. Index 0 is from start, index 1 is from end.</summary>
-        public float[] GradepostLocation = new float[2];
-        /// <summary>Reference to grade post in TrItemTable; inxed into TrackDB.TrItemTable.</summary>
+        /// <summary>Gradepost location (distance) from the start of the section. End of section for the reverse direction.</summary>
+        public float GradepostLocation;
+        /// <summary>0 is in track circuit direction, 1 is in reverse direction.</summary>
+        public int GradepostDirection;
+        /// <summary>Reference to grade post in TrItemTable; index into TrackDB's TrItemTable.</summary>
         public uint TrItemIdx;
-        /// <summary>Reference to Track Node this gradepost is in; index into TrackDB.TrackNodes.</summary>
+        /// <summary>Reference to Track Node this gradepost is in; index into TrackDB's TrackNodes.</summary>
         public int TrackNodeIdx;
 
-        public TrackCircuitGradepost(Gradepost thisRef, float distanceFromStart, float distanceFromEnd)
+        public TrackCircuitGradepost(Gradepost thisRef, float distanceFromStart, int dir)
         {
             GradepostRef = thisRef;
-            GradepostLocation[0] = distanceFromStart;
-            GradepostLocation[1] = distanceFromEnd;
+            GradepostLocation = distanceFromStart;
+            GradepostDirection = dir;
         }
     }
 }

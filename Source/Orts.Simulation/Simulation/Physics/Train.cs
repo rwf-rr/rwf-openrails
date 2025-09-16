@@ -69,6 +69,7 @@ using Orts.Simulation.Timetables;
 using ORTS.Common;
 using ORTS.Scripting.Api;
 using ORTS.Settings;
+using static System.Collections.Specialized.BitVector32;
 using Event = Orts.Common.Event;
 
 namespace Orts.Simulation.Physics
@@ -14736,6 +14737,11 @@ namespace Orts.Simulation.Physics
             //TODO add generation of other train data
         }
 
+#if DEBUG
+        public int NextDumpTime = 0;  // DEBUG
+        public int CallCount = 2;
+#endif
+
         /// <summary>
         /// Updates the Player train data;
         /// For every section it adds the TrainObjectItems to the various lists;
@@ -14992,21 +14998,27 @@ namespace Orts.Simulation.Physics
                     }
 
                     // search for grade posts
-                    if (thisSection.CircuitItems.TrackCircuitGradeposts != null)
+                    // no change if using sectionDirection, match as 0 or match as 1
+                    int relativeDirection = sectionDirection == dir ? 0 : 1;
+                    if (thisSection.CircuitItems.TrackCircuitGradeposts[relativeDirection] != null)
                     {
-                        foreach (TrackCircuitGradepost thisGradepostItem in thisSection.CircuitItems.TrackCircuitGradeposts)
+                        foreach (TrackCircuitGradepost thisGradepostItem in thisSection.CircuitItems.TrackCircuitGradeposts[sectionDirection])
                         {
-                            var gradepostDirection = sectionDirection == 1 ? 0 : 1;
                             Gradepost thisGradepost = thisGradepostItem.GradepostRef;
-                            var distanceToTrainM = thisGradepostItem.GradepostLocation[gradepostDirection] + sectionDistanceToTrainM;
+                            var distanceToTrainM = thisGradepostItem.GradepostLocation + sectionDistanceToTrainM;
                             if (distanceToTrainM < maxDistanceM)
                             {
-                                if (!(distanceToTrainM - prevGradepostDistance < 50 && thisGradepost.GradePct[gradepostDirection] == prevGradepostValue) && distanceToTrainM > 0)
+                                if (!(distanceToTrainM - prevGradepostDistance < 50 && thisGradepost.GradePct == prevGradepostValue) && distanceToTrainM > 0)
                                 {
-                                    thisItem = new TrainObjectItem(thisGradepost.GradePct[gradepostDirection], distanceToTrainM);
+                                    thisItem = new TrainObjectItem(thisGradepost.GradePct, distanceToTrainM);
                                     prevGradepostDistance = distanceToTrainM;
-                                    prevGradepostValue = thisGradepost.GradePct[gradepostDirection];
+                                    prevGradepostValue = thisGradepost.GradePct;
                                     PlayerTrainGradeposts[dir].Add(thisItem);
+#if DEBUG
+                                    if (System.DateTime.Now.Second > NextDumpTime || CallCount > 0)
+                                        Debug.WriteLine(String.Format("Train-Adding: dir {0}, TNIdx {1}, distance {2:F1}, grade {3:F2}, circuitIDX {4}, TrItemId {5}",
+                                        dir, thisGradepost.TrackNodeIdx, thisItem.DistanceToTrainM, thisItem.GradePct, thisSection.Index, thisGradepost.TrItemId));
+#endif
                                 }
                             }
                             else break;
@@ -15049,6 +15061,30 @@ namespace Orts.Simulation.Physics
                         continue;
                 }
             }
+#if DEBUG
+            if (System.DateTime.Now.Second > NextDumpTime || CallCount > 0)
+            {
+                int cnt = 0;
+                foreach (var gradepost in PlayerTrainGradeposts[0])
+                {
+                    Debug.WriteLine(String.Format("TrainGradepost-Fwd: {0}, distance {1:F1}, grade = {2:F2}",
+                    cnt, gradepost.DistanceToTrainM, gradepost.GradePct));
+                    cnt++;
+
+                }
+                int cnt1 = 0;
+                foreach (var gradepost in PlayerTrainGradeposts[1])
+                {
+                    Debug.WriteLine(String.Format("TrainGradepost-Rev: {0}, distance {1:F1}, grade = {2:F2}",
+                    cnt1, gradepost.DistanceToTrainM, gradepost.GradePct));
+                    cnt1++;
+
+                }
+                Debug.WriteLine(String.Format("TrainGradepost-count: fwd {0}, rev {1}", cnt, cnt1));
+                NextDumpTime = System.DateTime.Now.Second + 60;
+                CallCount--;
+            }
+#endif
         }
 
         /// <summary>
