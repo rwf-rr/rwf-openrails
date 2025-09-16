@@ -71,7 +71,7 @@ namespace Orts.Viewer3D.Popups
 		};
 
         public TrackMonitorWindow(WindowManager owner)
-            : base(owner, Window.DecorationSize.X + owner.TextFontDefault.Height * 10, Window.DecorationSize.Y + owner.TextFontDefault.Height * (5 + TrackMonitorHeightInLinesOfText) + ControlLayout.SeparatorSize * 3, Viewer.Catalog.GetString("Track Monitor"))
+            : base(owner, Window.DecorationSize.X + owner.TextFontDefault.Height * 12, Window.DecorationSize.Y + owner.TextFontDefault.Height * (5 + TrackMonitorHeightInLinesOfText) + ControlLayout.SeparatorSize * 3, Viewer.Catalog.GetString("Track Monitor"))
         {
             ControlModeLabels = new Dictionary<Train.TRAIN_CONTROL, string> 
             {
@@ -116,7 +116,7 @@ namespace Orts.Viewer3D.Popups
             vbox.AddHorizontalSeparator();
             {
                 var hbox = vbox.AddLayoutHorizontalLineOfText();
-                hbox.Add(new Label(hbox.RemainingWidth, hbox.RemainingHeight, Viewer.Catalog.GetString(" Milepost   Limit     Dist")));
+                hbox.Add(new Label(hbox.RemainingWidth, hbox.RemainingHeight, Viewer.Catalog.GetString(" Milepost Grade   Limit     Dist")));
             }
             vbox.AddHorizontalSeparator();
             vbox.Add(Monitor = new TrackMonitor(vbox.RemainingWidth, vbox.RemainingHeight, Owner));
@@ -222,7 +222,15 @@ namespace Orts.Viewer3D.Popups
 
         Train.TrainInfo validInfo;
 
-        const int DesignWidth = 150; // All Width/X values are relative to this width.
+        // default dimensions and positions
+        const int DesignWidth = 192; // All Width/X values are relative to this width.
+        const int DfltMilepostTextOffset = 0;
+        const int DfltGradPostTextOffset = 42;
+        const int DfltArrowOffset = 64;
+        const int DfltTrackOffset = 84;
+        const int DfltSpeedTextOffset = 112;
+        const int DfltSignalOffset = 137;
+        const int DfltDistanceTextOffset = 159;
 
         // position constants
         readonly int additionalInfoHeight = 16; // vertical offset on window for additional out-of-range info at top and bottom
@@ -237,11 +245,12 @@ namespace Orts.Viewer3D.Popups
         // Vertical offset for text for forwards ([0]) and backwards ([1]).
         readonly int[] textOffset = new int[2] { -11, -3 };
 
-        // Horizontal offsets for various elements.
-        readonly int distanceTextOffset = 117;
-        readonly int trackOffset = 42;
-        readonly int speedTextOffset = 70;
-        readonly int milepostTextOffset = 0;
+        // Horizontal offsets for various elements. Will be scaled.
+        readonly int distanceTextOffset = DfltDistanceTextOffset;
+        readonly int trackOffset = DfltTrackOffset;
+        readonly int speedTextOffset = DfltSpeedTextOffset;
+        readonly int milepostTextOffset = DfltMilepostTextOffset;
+        readonly int gradepostTextOffset = DfltGradPostTextOffset;
 
         // position definition arrays
         // contents :
@@ -251,18 +260,18 @@ namespace Orts.Viewer3D.Popups
         // cell 3 : X size
         // cell 4 : Y size
 
-        int[] eyePosition = new int[5] { 42, -4, -20, 24, 24 };
-        int[] trainPosition = new int[5] { 42, -12, -12, 24, 24 }; // Relative positioning
-        int[] otherTrainPosition = new int[5] { 42, -24, 0, 24, 24 }; // Relative positioning
-        int[] stationPosition = new int[5] { 42, 0, -24, 24, 12 }; // Relative positioning
-        int[] reversalPosition = new int[5] { 42, -21, -3, 24, 24 }; // Relative positioning
-        int[] waitingPointPosition = new int[5] { 42, -21, -3, 24, 24 }; // Relative positioning
-        int[] endAuthorityPosition = new int[5] { 42, -14, -10, 24, 24 }; // Relative positioning
-        int[] signalPosition = new int[5] { 95, -16, 0, 16, 16 }; // Relative positioning
-        int[] arrowPosition = new int[5] { 22, -12, -12, 24, 24 };
-        int[] invalidReversalPosition = new int[5] { 42, -14, -10, 24, 24 }; // Relative positioning
-        int[] leftSwitchPosition = new int[5] { 37, -14, -10, 24, 24 }; // Relative positioning
-        int[] rightSwitchPosition = new int[5] { 47, -14, -10, 24, 24 }; // Relative positioning
+        int[] eyePosition = new int[5] { DfltTrackOffset, -4, -20, 24, 24 };
+        int[] trainPosition = new int[5] { DfltTrackOffset, -12, -12, 24, 24 }; // Relative positioning
+        int[] otherTrainPosition = new int[5] { DfltTrackOffset, -24, 0, 24, 24 }; // Relative positioning
+        int[] stationPosition = new int[5] { DfltTrackOffset, 0, -24, 24, 12 }; // Relative positioning
+        int[] reversalPosition = new int[5] { DfltTrackOffset, -21, -3, 24, 24 }; // Relative positioning
+        int[] waitingPointPosition = new int[5] { DfltTrackOffset, -21, -3, 24, 24 }; // Relative positioning
+        int[] endAuthorityPosition = new int[5] { DfltTrackOffset, -14, -10, 24, 24 }; // Relative positioning
+        int[] signalPosition = new int[5] { DfltSignalOffset, -16, 0, 16, 16 }; // Relative positioning
+        int[] arrowPosition = new int[5] { DfltArrowOffset, -12, -12, 24, 24 };
+        int[] invalidReversalPosition = new int[5] { DfltTrackOffset, -14, -10, 24, 24 }; // Relative positioning
+        int[] leftSwitchPosition = new int[5] { DfltTrackOffset - 5, -14, -10, 24, 24 }; // Relative positioning
+        int[] rightSwitchPosition = new int[5] { DfltTrackOffset + 5, -14, -10, 24, 24 }; // Relative positioning
 
         // texture rectangles : X-offset, Y-offset, width, height
         Rectangle eyeSprite = new Rectangle(0, 144, 24, 24);
@@ -331,6 +340,8 @@ namespace Orts.Viewer3D.Popups
             ScaleDesign(ref distanceTextOffset);
             ScaleDesign(ref trackOffset);
             ScaleDesign(ref speedTextOffset);
+            ScaleDesign(ref milepostTextOffset);
+            ScaleDesign(ref gradepostTextOffset);
 
             ScaleDesign(ref eyePosition);
             ScaleDesign(ref trainPosition);
@@ -672,6 +683,7 @@ namespace Orts.Viewer3D.Popups
             var signalShown = false;
             var firstLabelShown = false;
             var borderSignalShown = false;
+            float precedingGradePct = forward ? -validInfo.currentElevationPercent : validInfo.currentElevationPercent;
 
             foreach (var thisItem in itemList)
             {
@@ -703,6 +715,10 @@ namespace Orts.Viewer3D.Popups
 
                     case Train.TrainObjectItem.TRAINOBJECTTYPE.MILEPOST:
                         lastLabelPosition = drawMilePost(spriteBatch, offset, startObjectArea, endObjectArea, zeroPoint, maxDistance, distanceFactor, firstLabelPosition, forward, lastLabelPosition, thisItem, ref firstLabelShown);
+                        break;
+
+                    case Train.TrainObjectItem.TRAINOBJECTTYPE.GRADEPOST:
+                        drawGradePost(spriteBatch, offset, startObjectArea, endObjectArea, zeroPoint, maxDistance, distanceFactor, firstLabelPosition, forward, lastLabelPosition, thisItem, ref firstLabelShown, ref precedingGradePct);
                         break;
 
                     case Train.TrainObjectItem.TRAINOBJECTTYPE.FACING_SWITCH:
@@ -1026,6 +1042,42 @@ namespace Orts.Viewer3D.Popups
                 var milepostString = thisItem.ThisMile;
                 Font.Draw(spriteBatch, labelPoint, milepostString, Color.White);
 
+            }
+
+            return newLabelPosition;
+        }
+
+        /// <summary>
+        /// Draw Grade.
+        /// </summary>
+        int drawGradePost(SpriteBatch spriteBatch, Point offset, int startObjectArea, int endObjectArea, int zeroPoint, float maxDistance, float distanceFactor, int firstLabelPosition, bool forward, int lastLabelPosition, Train.TrainObjectItem thisItem, ref bool firstLabelShown, ref float precedingGradePct)
+        {
+            var newLabelPosition = lastLabelPosition;
+
+            if (thisItem.DistanceToTrainM < (maxDistance - textSpacing / distanceFactor))
+            {
+                var itemOffset = Convert.ToInt32(thisItem.DistanceToTrainM * distanceFactor);
+                var itemLocation = forward ? zeroPoint - itemOffset : zeroPoint + itemOffset;
+                newLabelPosition = forward ? Math.Min(itemLocation, lastLabelPosition - textSpacing) : Math.Max(itemLocation, lastLabelPosition + textSpacing);
+                var labelPoint = new Point(offset.X + gradepostTextOffset, offset.Y + newLabelPosition + textOffset[forward ? 0 : 1]);
+                // TODO: support promille or 1-in-x
+                String gradeStr; var gradeColor = Color.White; char trendChar;
+                if (Math.Abs(thisItem.GradePct - precedingGradePct) < 0.1f) { trendChar = ' '; }
+                else if (precedingGradePct < thisItem.GradePct) { trendChar = '\u2197'; }
+                else { trendChar = '\u2198'; }
+                if (thisItem.GradePct < -0.00015)
+                {
+                    gradeStr = String.Format("{0:F1}% {1} ", thisItem.GradePct, trendChar);
+                    gradeColor = Color.LightSkyBlue;
+                }
+                else if (thisItem.GradePct > 0.00015)
+                {
+                    gradeStr = String.Format("+{0:F1}% {1} ", thisItem.GradePct, trendChar);
+                    gradeColor = Color.Yellow;
+                }
+                else { gradeStr = String.Format(" 0% {1} ", thisItem.GradePct, trendChar); }
+                Font.Draw(spriteBatch, labelPoint, gradeStr, gradeColor);
+                precedingGradePct = thisItem.GradePct;
             }
 
             return newLabelPosition;
