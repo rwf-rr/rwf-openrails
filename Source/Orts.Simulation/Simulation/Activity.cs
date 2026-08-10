@@ -528,9 +528,10 @@ namespace Orts.Simulation
                     zones.ActivityRestrictedSpeedZoneList[idxZone].EndPosition, false, worldPosition2, false);
 			
                 // Add the speedposts to the track database. This will set the TrItemId's of all speedposts
-            trackDB.AddTrItems(newSpeedPostItems);
+                trackDB.AddTrItems(newSpeedPostItems);
+                // TODO: shoulde the item be added to the TrVectorNode's TrItemRefs?
 
-            // And now update the various (vector) tracknodes (this needs the TrItemIds.
+                // And now update the various (vector) tracknodes (this needs the TrItemIds.
                 var endOffset = AddItemIdToTrackNode(ref zones.ActivityRestrictedSpeedZoneList[idxZone].EndPosition,
                     tsectionDat, trackDB, newSpeedPostItems[1], out traveller);
                 var startOffset = AddItemIdToTrackNode(ref zones.ActivityRestrictedSpeedZoneList[idxZone].StartPosition,
